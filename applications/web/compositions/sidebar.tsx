@@ -4,7 +4,7 @@ import { type ReactNode } from "react";
 import { cn } from "@lab/ui/utils/cn";
 import { Copy } from "@lab/ui/components/copy";
 import { Button } from "@lab/ui/components/button";
-import { ChevronRightIcon, PlusIcon, CubeIcon } from "@radix-ui/react-icons";
+import { ChevronRight, Plus, Box } from "lucide-react";
 
 type SidebarProps = {
   children: ReactNode;
@@ -89,11 +89,11 @@ export function SidebarProject({ name, icon, active, onClick }: SidebarProjectPr
         active ? "bg-muted" : "hover:bg-muted/50",
       )}
     >
-      {icon || <CubeIcon className="w-3 h-3 flex-shrink-0" />}
+      {icon || <Box className="w-3 h-3 flex-shrink-0" />}
       <Copy as="span" size="xs" className="flex-1 truncate text-left">
         {name}
       </Copy>
-      <ChevronRightIcon
+      <ChevronRight
         className={cn(
           "w-3 h-3 flex-shrink-0 opacity-0 group-hover:opacity-100",
           active && "opacity-100",
@@ -166,12 +166,7 @@ type SidebarNewSessionProps = {
 export function SidebarNewSession({ onClick }: SidebarNewSessionProps) {
   return (
     <div className="p-0.5">
-      <Button
-        onClick={onClick}
-        icon={<PlusIcon width={14} />}
-        variant="secondary"
-        className="w-full"
-      >
+      <Button onClick={onClick} icon={<Plus width={14} />} variant="secondary" className="w-full">
         New Chat
       </Button>
     </div>

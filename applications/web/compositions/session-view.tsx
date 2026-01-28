@@ -5,15 +5,8 @@ import { cn } from "@lab/ui/utils/cn";
 import { Copy } from "@lab/ui/components/copy";
 import { Button } from "@lab/ui/components/button";
 import { Spinner } from "@lab/ui/components/spinner";
-import {
-  ChevronDownIcon,
-  PaperPlaneIcon,
-  SpeakerLoudIcon,
-  PlusIcon,
-  LightningBoltIcon,
-  MixerHorizontalIcon,
-  CheckIcon,
-} from "@radix-ui/react-icons";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@lab/ui/components/tabs";
+import { ChevronDown, Send, Volume2, Plus, Zap, SlidersHorizontal, Check } from "lucide-react";
 
 type ToolCallStatus = "in_progress" | "completed";
 
@@ -37,20 +30,31 @@ type SessionViewProps = {
 
 export function SessionView({ messages }: SessionViewProps) {
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto">
-        {messages.flatMap((message) => {
-          const items: ReactNode[] = [<MessageBlock key={message.id} message={message} />];
-          if (message.toolCalls) {
-            for (const toolCall of message.toolCalls) {
-              items.push(<ToolCallBlock key={toolCall.id} toolCall={toolCall} />);
+    <Tabs defaultValue="chat" className="flex-1 flex flex-col h-full min-w-0">
+      <TabsList>
+        <TabsTrigger value="chat">Chat</TabsTrigger>
+        <TabsTrigger value="review">Review</TabsTrigger>
+      </TabsList>
+      <TabsContent value="chat" className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 overflow-y-auto">
+          {messages.flatMap((message) => {
+            const items: ReactNode[] = [<MessageBlock key={message.id} message={message} />];
+            if (message.toolCalls) {
+              for (const toolCall of message.toolCalls) {
+                items.push(<ToolCallBlock key={toolCall.id} toolCall={toolCall} />);
+              }
             }
-          }
-          return items;
-        })}
-      </div>
-      <ChatInput />
-    </div>
+            return items;
+          })}
+        </div>
+        <ChatInput />
+      </TabsContent>
+      <TabsContent value="review" className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 flex items-center justify-center">
+          <Copy muted>Review content coming soon</Copy>
+        </div>
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -80,7 +84,7 @@ function ToolCallBlock({ toolCall }: ToolCallBlockProps) {
       type="button"
       className="flex items-center gap-2 w-full px-4 py-2 text-muted-foreground border-b border-border bg-muted/30 hover:bg-muted/50"
     >
-      {isCompleted ? <CheckIcon className="w-3 h-3" /> : <Spinner size="xxs" />}
+      {isCompleted ? <Check className="w-3 h-3" /> : <Spinner size="xxs" />}
       {toolCall.duration && (
         <Copy as="span" size="xs" muted>
           {toolCall.duration}
@@ -90,7 +94,7 @@ function ToolCallBlock({ toolCall }: ToolCallBlockProps) {
         {toolCall.name}
       </Copy>
       <span className="flex-1" />
-      <ChevronDownIcon className="w-3 h-3" />
+      <ChevronDown className="w-3 h-3" />
     </button>
   );
 }
@@ -106,21 +110,21 @@ function ChatInput() {
         />
         <div className="flex items-center justify-between px-1.5 pb-1.5">
           <div className="flex items-center gap-1">
-            <Button variant="secondary" icon={<PlusIcon className="w-3 h-3" />}>
+            <Button variant="secondary" icon={<Plus className="w-3 h-3" />}>
               Attach
             </Button>
-            <Button variant="secondary" icon={<LightningBoltIcon className="w-3 h-3" />}>
+            <Button variant="secondary" icon={<Zap className="w-3 h-3" />}>
               Skills
             </Button>
-            <Button variant="secondary" icon={<MixerHorizontalIcon className="w-3 h-3" />}>
+            <Button variant="secondary" icon={<SlidersHorizontal className="w-3 h-3" />}>
               Model
             </Button>
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="secondary" icon={<SpeakerLoudIcon className="w-3 h-3" />}>
+            <Button variant="secondary" icon={<Volume2 className="w-3 h-3" />}>
               Voice
             </Button>
-            <Button variant="primary" icon={<PaperPlaneIcon className="w-3 h-3" />}>
+            <Button variant="primary" icon={<Send className="w-3 h-3" />}>
               Send
             </Button>
           </div>

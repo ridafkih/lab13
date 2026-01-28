@@ -58,13 +58,7 @@ export type TabsListProps = {
 
 export function TabsList({ children, className }: TabsListProps) {
   return (
-    <div
-      role="tablist"
-      className={cn(
-        "inline-flex items-center border-b border-border",
-        className
-      )}
-    >
+    <div role="tablist" className={cn("grid grid-cols-[1fr_1fr] h-8 border-b border-border", className)}>
       {children}
     </div>
   );
@@ -91,13 +85,11 @@ export function TabsTrigger({
       aria-selected={isSelected}
       tabIndex={isSelected ? 0 : -1}
       className={cn(
-        "inline-flex items-center justify-center px-4 py-2 text-sm font-medium -mb-px",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        "inline-flex items-center justify-center px-3 py-1 text-xs",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         "disabled:pointer-events-none disabled:opacity-50",
-        isSelected
-          ? "border-b-2 border-foreground text-foreground"
-          : "text-muted-foreground hover:text-foreground",
-        className
+        isSelected ? "bg-background text-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70",
+        className,
       )}
       onClick={() => setValue(value)}
       disabled={disabled}
@@ -133,7 +125,7 @@ export function TabsContent({
   if (!isSelected) return null;
 
   return (
-    <div role="tabpanel" className={cn("mt-4", className)}>
+    <div role="tabpanel" className={className}>
       {children}
     </div>
   );

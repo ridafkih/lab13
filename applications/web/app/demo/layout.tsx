@@ -15,7 +15,7 @@ import {
 } from "@/compositions/sidebar";
 import { Avatar } from "@lab/ui/components/avatar";
 import { Copy } from "@lab/ui/components/copy";
-import { Cross1Icon } from "@radix-ui/react-icons";
+import { X } from "lucide-react";
 import type { ReactNode } from "react";
 
 type Project = {
@@ -100,7 +100,7 @@ export default function DemoLayout({ children }: { children: ReactNode }) {
                       <SidebarHeader
                         action={
                           <SidebarAction
-                            icon={<Cross1Icon />}
+                            icon={<X />}
                             label="Close"
                             onClick={() => router.push("/demo")}
                           />

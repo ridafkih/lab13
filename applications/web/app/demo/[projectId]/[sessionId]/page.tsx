@@ -1,4 +1,5 @@
 import { SessionView } from "@/compositions/session-view";
+import { SessionSidebar } from "@/compositions/session-sidebar";
 
 const exampleMessages = [
   {
@@ -38,6 +39,31 @@ const exampleMessages = [
   },
 ];
 
+const exampleSidebarData = {
+  promptEngineers: [
+    { id: "1", name: "John Doe" },
+    { id: "2", name: "Jane Smith" },
+  ],
+  createdAt: "2 hours ago",
+  branches: [{ id: "1", name: "fix/auth-redirect", prNumber: 142, prUrl: "#" }],
+  tasks: [
+    { id: "1", title: "Investigate auth flow", completed: true },
+    { id: "2", title: "Fix cookie options", completed: true },
+    { id: "3", title: "Test redirect behavior", completed: false },
+    { id: "4", title: "Update documentation", completed: false },
+  ],
+};
+
 export default function SessionPage() {
-  return <SessionView messages={exampleMessages} />;
+  return (
+    <div className="flex h-full">
+      <SessionView messages={exampleMessages} />
+      <SessionSidebar
+        promptEngineers={exampleSidebarData.promptEngineers}
+        createdAt={exampleSidebarData.createdAt}
+        branches={exampleSidebarData.branches}
+        tasks={exampleSidebarData.tasks}
+      />
+    </div>
+  );
 }
