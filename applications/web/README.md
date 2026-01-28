@@ -1,36 +1,96 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Web Application
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
 bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Review Panel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The Review tab displays file diffs for reviewing agent-made changes. The file list appears in the sidebar under "Changed Files", and each diff has a sticky header with a dismiss checkbox.
 
-## Learn More
+### Data Types
 
-To learn more about Next.js, take a look at the following resources:
+```typescript
+type ReviewFileStatus = "pending" | "dismissed";
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+type ReviewFileChangeType = "modified" | "created" | "deleted";
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+interface ReviewableFile {
+  path: string;
+  originalContent: string;
+  currentContent: string;
+  status: ReviewFileStatus;
+  changeType: ReviewFileChangeType;
+}
+```
 
-## Deploy on Vercel
+### Usage
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Both `ReviewPanel` and `SessionSidebar` need access to the review files:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```tsx
+import { ReviewPanel } from "./compositions/review/review-panel";
+import { SessionSidebar } from "./compositions/session-sidebar";
+import type { ReviewableFile } from "@/types/review";
+
+const [files, setFiles] = useState<ReviewableFile[]>([
+  {
+    path: "src/auth/middleware.ts",
+    changeType: "modified",
+    status: "pending",
+    originalContent: "// original file contents",
+    currentContent: "// modified file contents",
+  },
+  {
+    path: "src/components/new-file.tsx",
+    changeType: "created",
+    status: "pending",
+    originalContent: "",
+    currentContent: "// new file contents",
+  },
+]);
+
+function handleDismiss(path: string) {
+  setFiles((files) =>
+    files.map((f) => (f.path === path ? { ...f, status: "dismissed" } : f))
+  );
+}
+
+// In ReviewPanel (displays diffs)
+<ReviewPanel files={files} onDismiss={handleDismiss} />
+
+// In SessionSidebar (displays file list)
+<SessionSidebar
+  reviewFiles={files}
+  onDismissFile={handleDismiss}
+  // ...other props
+/>
+```
+
+### Props
+
+**ReviewPanel**
+
+| Prop        | Type                     | Description                                   |
+| ----------- | ------------------------ | --------------------------------------------- |
+| `files`     | `ReviewableFile[]`       | Array of files to review                      |
+| `onDismiss` | `(path: string) => void` | Called when sticky header checkbox is clicked |
+
+**SessionSidebar** (additional props)
+
+| Prop            | Type                     | Description                               |
+| --------------- | ------------------------ | ----------------------------------------- |
+| `reviewFiles`   | `ReviewableFile[]`       | Array of files to show in "Changed Files" |
+| `onDismissFile` | `(path: string) => void` | Called when file checkbox is clicked      |
+
+### Behavior
+
+- All pending files display their diffs stacked vertically
+- Each diff has a sticky header with file path and dismiss checkbox
+- Sidebar shows file list under "Changed Files" with checkboxes
+- Clicking checkbox in either location dismisses the file
+- Dismissed files are removed from diff view, shown with strikethrough in sidebar

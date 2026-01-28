@@ -94,10 +94,7 @@ export function SidebarProject({ name, icon, active, onClick }: SidebarProjectPr
         {name}
       </Copy>
       <ChevronRight
-        className={cn(
-          "w-3 h-3 opacity-0 group-hover:opacity-100",
-          active && "opacity-100",
-        )}
+        className={cn("w-3 h-3 opacity-0 group-hover:opacity-100", active && "opacity-100")}
       />
     </button>
   );

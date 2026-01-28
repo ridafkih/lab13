@@ -19,6 +19,8 @@ import {
   Frame,
   Radio,
 } from "lucide-react";
+import { ReviewPanel } from "./review/review-panel";
+import type { ReviewableFile } from "@/types/review";
 
 type ToolCallStatus = "in_progress" | "completed";
 
@@ -38,9 +40,11 @@ type Message = {
 
 type SessionViewProps = {
   messages: Message[];
+  reviewFiles: ReviewableFile[];
+  onDismissFile: (path: string) => void;
 };
 
-export function SessionView({ messages }: SessionViewProps) {
+export function SessionView({ messages, reviewFiles, onDismissFile }: SessionViewProps) {
   return (
     <Tabs defaultValue="chat" className="flex-1 flex flex-col h-full min-w-0">
       <TabsList className="grid-cols-[1fr_1fr_1fr_1fr]">
@@ -76,9 +80,7 @@ export function SessionView({ messages }: SessionViewProps) {
         <ChatInput />
       </TabsContent>
       <TabsContent value="review" className="flex-1 flex flex-col min-h-0">
-        <div className="flex-1 flex items-center justify-center">
-          <Copy muted>Review content coming soon</Copy>
-        </div>
+        <ReviewPanel files={reviewFiles} onDismiss={onDismissFile} />
       </TabsContent>
       <TabsContent value="frame" className="flex-1 flex flex-col min-h-0">
         <div className="flex-1 flex items-center justify-center">

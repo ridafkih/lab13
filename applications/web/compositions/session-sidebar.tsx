@@ -5,7 +5,17 @@ import { cn } from "@lab/ui/utils/cn";
 import { Copy } from "@lab/ui/components/copy";
 import { Avatar } from "@lab/ui/components/avatar";
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@lab/ui/components/dropdown";
-import { GitBranch, CheckCircle, Circle, ExternalLink, Container, ChevronDown } from "lucide-react";
+import {
+  GitBranch,
+  Check,
+  ExternalLink,
+  Container,
+  ChevronDown,
+  File,
+  FilePlus,
+  FileX,
+} from "lucide-react";
+import type { ReviewableFile } from "@/types/review";
 
 type PromptEngineer = {
   id: string;
@@ -57,12 +67,13 @@ type LogSource = {
 
 type SessionSidebarProps = {
   promptEngineers: PromptEngineer[];
-  createdAt: string;
   branches: Branch[];
   tasks: Task[];
   links: Link[];
   containers: ContainerInfo[];
   logSources: LogSource[];
+  reviewFiles: ReviewableFile[];
+  onDismissFile: (path: string) => void;
 };
 
 const containerStatusStyles: Record<ContainerStatus, string> = {
@@ -78,14 +89,27 @@ const logLevelStyles: Record<LogLevel, string> = {
   error: "text-destructive",
 };
 
+const changeTypeIcons = {
+  modified: File,
+  created: FilePlus,
+  deleted: FileX,
+};
+
+const changeTypeColors = {
+  modified: "text-warning",
+  created: "text-success",
+  deleted: "text-destructive",
+};
+
 export function SessionSidebar({
   promptEngineers,
-  createdAt,
   branches,
   tasks,
   links,
   containers,
   logSources,
+  reviewFiles,
+  onDismissFile,
 }: SessionSidebarProps) {
   return (
     <aside className="max-w-64 border-l border-border h-full flex flex-col">
@@ -108,10 +132,49 @@ export function SessionSidebar({
           </div>
         </Section>
 
-        <Section title="Created">
-          <Copy size="xs" muted>
-            {createdAt}
-          </Copy>
+        <Section title="Changed Files">
+          {reviewFiles.length === 0 ? (
+            <Copy size="xs" muted>
+              No changed files
+            </Copy>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {reviewFiles.map((file) => {
+                const Icon = changeTypeIcons[file.changeType];
+                const filename = file.path.split("/").pop() ?? file.path;
+                const isDismissed = file.status === "dismissed";
+
+                return (
+                  <div key={file.path} className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onDismissFile(file.path)}
+                      className={cn(
+                        "w-3 h-3 flex-shrink-0 border flex items-center justify-center",
+                        isDismissed
+                          ? "border-foreground bg-foreground text-background"
+                          : "border-muted-foreground",
+                      )}
+                    >
+                      {isDismissed && <Check className="w-2 h-2" />}
+                    </button>
+                    <Icon
+                      className={cn("w-3 h-3 flex-shrink-0", changeTypeColors[file.changeType])}
+                    />
+                    <Copy
+                      size="xs"
+                      className={cn(
+                        "flex-1 truncate",
+                        isDismissed && "line-through text-muted-foreground",
+                      )}
+                    >
+                      {filename}
+                    </Copy>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </Section>
 
         <Section title="Branches">
@@ -166,11 +229,16 @@ export function SessionSidebar({
             <div className="flex flex-col gap-1">
               {tasks.map((task) => (
                 <div key={task.id} className="flex items-center gap-1.5">
-                  {task.completed ? (
-                    <CheckCircle className="w-3 h-3 text-success" />
-                  ) : (
-                    <Circle className="w-3 h-3 text-muted-foreground" />
-                  )}
+                  <span
+                    className={cn(
+                      "w-3 h-3 flex-shrink-0 border flex items-center justify-center",
+                      task.completed
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-muted-foreground",
+                    )}
+                  >
+                    {task.completed && <Check className="w-2 h-2" />}
+                  </span>
                   <Copy
                     size="xs"
                     className={cn(task.completed && "line-through text-muted-foreground")}

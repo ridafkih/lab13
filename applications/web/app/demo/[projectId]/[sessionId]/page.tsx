@@ -1,5 +1,9 @@
+"use client";
+
+import { useState } from "react";
 import { SessionView } from "@/compositions/session-view";
 import { SessionSidebar } from "@/compositions/session-sidebar";
+import type { ReviewableFile } from "@/types/review";
 
 const exampleMessages = [
   {
@@ -44,7 +48,6 @@ const exampleSidebarData = {
     { id: "1", name: "John Doe" },
     { id: "2", name: "Jane Smith" },
   ],
-  createdAt: "2 hours ago",
   branches: [{ id: "1", name: "fix/auth-redirect", prNumber: 142, prUrl: "#" }],
   tasks: [
     { id: "1", title: "Investigate auth flow", completed: true },
@@ -148,18 +151,147 @@ const exampleSidebarData = {
   ],
 };
 
+const initialReviewFiles: ReviewableFile[] = [
+  {
+    path: "auth/middleware.ts",
+    changeType: "modified",
+    status: "pending",
+    originalContent: `import { NextRequest, NextResponse } from 'next/server';
+import { getSession } from '@/lib/session';
+
+export async function middleware(request: NextRequest) {
+  const session = await getSession(request);
+
+  if (!session && request.nextUrl.pathname.startsWith('/dashboard')) {
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+
+  const response = NextResponse.next();
+  response.cookies.set('session', session?.id || '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+  });
+
+  return response;
+}`,
+    currentContent: `import { NextRequest, NextResponse } from 'next/server';
+import { getSession } from '@/lib/session';
+
+export async function middleware(request: NextRequest) {
+  const session = await getSession(request);
+
+  if (!session && request.nextUrl.pathname.startsWith('/dashboard')) {
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+
+  const response = NextResponse.next();
+  response.cookies.set('session', session?.id || '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+  });
+
+  return response;
+}`,
+  },
+  {
+    path: "lib/session.ts",
+    changeType: "modified",
+    status: "pending",
+    originalContent: `export interface Session {
+  id: string;
+  userId: string;
+  expiresAt: Date;
+}
+
+export async function getSession(request: Request): Promise<Session | null> {
+  const cookie = request.headers.get('cookie');
+  // ... session logic
+  return null;
+}`,
+    currentContent: `export interface Session {
+  id: string;
+  userId: string;
+  expiresAt: Date;
+}
+
+export async function getSession(request: Request): Promise<Session | null> {
+  const cookie = request.headers.get('cookie');
+  if (!cookie) return null;
+
+  const sessionId = parseCookie(cookie, 'session');
+  if (!sessionId) return null;
+
+  // Validate session from store
+  const session = await sessionStore.get(sessionId);
+  if (!session || session.expiresAt < new Date()) {
+    return null;
+  }
+
+  return session;
+}
+
+function parseCookie(cookie: string, name: string): string | null {
+  const match = cookie.match(new RegExp(\`(^| )\${name}=([^;]+)\`));
+  return match ? match[2] : null;
+}`,
+  },
+  {
+    path: "components/auth-guard.tsx",
+    changeType: "created",
+    status: "pending",
+    originalContent: "",
+    currentContent: `"use client";
+
+import { useSession } from "@/hooks/use-session";
+import { redirect } from "next/navigation";
+
+interface AuthGuardProps {
+  children: React.ReactNode;
+}
+
+export function AuthGuard({ children }: AuthGuardProps) {
+  const { session, isLoading } = useSession();
+
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
+
+  if (!session) {
+    redirect("/login");
+  }
+
+  return <>{children}</>;
+}`,
+  },
+];
+
 export default function SessionPage() {
+  const [reviewFiles, setReviewFiles] = useState<ReviewableFile[]>(initialReviewFiles);
+
+  const handleDismissFile = (path: string) => {
+    setReviewFiles((files) =>
+      files.map((f) => (f.path === path ? { ...f, status: "dismissed" as const } : f)),
+    );
+  };
   return (
     <div className="flex h-full">
-      <SessionView messages={exampleMessages} />
+      <SessionView
+        messages={exampleMessages}
+        reviewFiles={reviewFiles}
+        onDismissFile={handleDismissFile}
+      />
       <SessionSidebar
         promptEngineers={exampleSidebarData.promptEngineers}
-        createdAt={exampleSidebarData.createdAt}
         branches={exampleSidebarData.branches}
         tasks={exampleSidebarData.tasks}
         links={exampleSidebarData.links}
         containers={exampleSidebarData.containers}
         logSources={exampleSidebarData.logSources}
+        reviewFiles={reviewFiles}
+        onDismissFile={handleDismissFile}
       />
     </div>
   );
