@@ -28,6 +28,7 @@ type Session = {
   projectId: string;
   title: string;
   hasUnread?: boolean;
+  isWorking?: boolean;
   timestamp: string;
 };
 
@@ -38,11 +39,11 @@ const projects: Project[] = [
 ];
 
 const sessions: Session[] = [
-  { id: "s1", projectId: "1", title: "Fix auth redirect loop", hasUnread: true, timestamp: "2m" },
+  { id: "s1", projectId: "1", title: "Fix auth redirect loop", isWorking: true, timestamp: "2m" },
   { id: "s2", projectId: "1", title: "Add dark mode support", timestamp: "1h" },
   { id: "s3", projectId: "1", title: "Refactor user settings", timestamp: "3h" },
-  { id: "s4", projectId: "2", title: "Add rate limiting", hasUnread: true, timestamp: "5m" },
-  { id: "s5", projectId: "2", title: "Fix N+1 queries", timestamp: "1d" },
+  { id: "s4", projectId: "2", title: "Add rate limiting", isWorking: true, timestamp: "5m" },
+  { id: "s5", projectId: "2", title: "Fix N+1 queries", hasUnread: true, timestamp: "1d" },
 ];
 
 export default function DemoLayout({ children }: { children: ReactNode }) {
@@ -115,6 +116,7 @@ export default function DemoLayout({ children }: { children: ReactNode }) {
                             key={session.id}
                             title={session.title}
                             hasUnread={session.hasUnread}
+                            isWorking={session.isWorking}
                             active={sessionId === session.id}
                             onClick={() => router.push(`/demo/${project.id}/${session.id}`)}
                             timestamp={session.timestamp}

@@ -4,7 +4,7 @@ import { type ReactNode } from "react";
 import { cn } from "@lab/ui/utils/cn";
 import { Copy } from "@lab/ui/components/copy";
 import { Button } from "@lab/ui/components/button";
-import { ChevronRight, Plus, Box } from "lucide-react";
+import { ChevronRight, Plus, Box, Loader2 } from "lucide-react";
 
 type SidebarProps = {
   children: ReactNode;
@@ -103,6 +103,7 @@ export function SidebarProject({ name, icon, active, onClick }: SidebarProjectPr
 type SidebarSessionProps = {
   title: string;
   hasUnread?: boolean;
+  isWorking?: boolean;
   active?: boolean;
   onClick?: () => void;
   timestamp?: string;
@@ -111,6 +112,7 @@ type SidebarSessionProps = {
 export function SidebarSession({
   title,
   hasUnread,
+  isWorking,
   active,
   onClick,
   timestamp,
@@ -124,7 +126,20 @@ export function SidebarSession({
         active ? "bg-muted" : "hover:bg-muted/50",
       )}
     >
-      <span className={cn("w-1 h-1 bg-info", !hasUnread && "invisible")} />
+      <span className="grid w-3 h-3 place-items-center">
+        <Loader2
+          className={cn(
+            "w-3 h-3 animate-spin text-muted-foreground col-start-1 row-start-1",
+            !isWorking && "invisible",
+          )}
+        />
+        <span
+          className={cn(
+            "w-1 h-1 bg-info col-start-1 row-start-1",
+            (isWorking || !hasUnread) && "invisible",
+          )}
+        />
+      </span>
       <Copy as="span" size="xs" className="flex-1 truncate">
         {title}
       </Copy>
