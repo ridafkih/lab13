@@ -140,7 +140,7 @@ function ToolCallBlock({ toolCall }: ToolCallBlockProps) {
 function ChatInput() {
   return (
     <div className="border-t border-border">
-      <label className="flex flex-col bg-muted cursor-text">
+      <label className="flex flex-col bg-background cursor-text">
         <textarea
           placeholder="Send a message..."
           rows={3}

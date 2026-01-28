@@ -1,17 +1,23 @@
 "use client";
 
-import { useMemo } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { cn } from "@lab/ui/utils/cn";
 import { Copy } from "@lab/ui/components/copy";
+import { Button } from "@lab/ui/components/button";
 import { EmptyState } from "@lab/ui/components/empty-state";
 import { MultiFileDiff } from "@pierre/diffs/react";
-import type { FileContents } from "@pierre/diffs";
-import { Check, File, FilePlus, FileX } from "lucide-react";
+import type { FileContents, SelectedLineRange } from "@pierre/diffs";
+import { Check, File, FilePlus, FileX, Send, X } from "lucide-react";
 import type { ReviewableFile } from "@/types/review";
 
 interface ReviewPanelProps {
   files: ReviewableFile[];
   onDismiss: (path: string) => void;
+}
+
+interface LineSelection {
+  filePath: string;
+  range: SelectedLineRange;
 }
 
 const changeTypeIcons = {
@@ -27,7 +33,29 @@ const changeTypeColors = {
 };
 
 export function ReviewPanel({ files, onDismiss }: ReviewPanelProps) {
+  const [selection, setSelection] = useState<LineSelection | null>(null);
+  const prevSelectionRef = useRef<LineSelection | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pendingFiles = useMemo(() => files.filter((f) => f.status === "pending"), [files]);
+
+  useEffect(() => {
+    if (selection) {
+      textareaRef.current?.focus();
+    }
+    prevSelectionRef.current = selection;
+  }, [selection]);
+
+  const handleLineSelected = useCallback((filePath: string, range: SelectedLineRange | null) => {
+    if (range) {
+      setSelection({ filePath, range });
+    } else {
+      setSelection((prev) => (prev?.filePath === filePath ? null : prev));
+    }
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelection(null);
+  }, []);
 
   if (files.length === 0) {
     return (
@@ -66,6 +94,8 @@ export function ReviewPanel({ files, onDismiss }: ReviewPanelProps) {
             name: file.path,
             contents: file.changeType === "deleted" ? "" : file.currentContent,
           };
+          const shouldClearSelection =
+            prevSelectionRef.current?.filePath === file.path && selection?.filePath !== file.path;
 
           return (
             <div key={file.path} className="border-b border-border">
@@ -83,6 +113,7 @@ export function ReviewPanel({ files, onDismiss }: ReviewPanelProps) {
               <MultiFileDiff
                 oldFile={oldFile}
                 newFile={newFile}
+                selectedLines={shouldClearSelection ? null : undefined}
                 options={{
                   theme: "pierre-light",
                   diffStyle: "split",
@@ -91,6 +122,7 @@ export function ReviewPanel({ files, onDismiss }: ReviewPanelProps) {
                   overflow: "scroll",
                   disableFileHeader: true,
                   enableLineSelection: true,
+                  onLineSelected: (range) => handleLineSelected(file.path, range),
                   unsafeCSS: `
                     * { user-select: none; }
                     [data-line] { position: relative; }
@@ -107,7 +139,7 @@ export function ReviewPanel({ files, onDismiss }: ReviewPanelProps) {
                 }}
                 style={
                   {
-                    "--diffs-font-size": "13px",
+                    "--diffs-font-size": "12px",
                   } as React.CSSProperties
                 }
               />
@@ -115,6 +147,34 @@ export function ReviewPanel({ files, onDismiss }: ReviewPanelProps) {
           );
         })}
       </div>
+
+      {selection && (
+        <div className="border-t border-border">
+          <div className="flex items-center gap-1.5 px-2 py-1 border-b border-border bg-muted/50">
+            <Copy size="xs" muted>
+              {selection.filePath} L{selection.range.start}
+              {selection.range.end !== selection.range.start && `-${selection.range.end}`}
+            </Copy>
+            <span className="flex-1" />
+            <button type="button" onClick={clearSelection} className="p-0.5 hover:bg-muted">
+              <X className="w-3 h-3 text-muted-foreground" />
+            </button>
+          </div>
+          <label className="flex flex-col bg-background cursor-text">
+            <textarea
+              ref={textareaRef}
+              placeholder="Provide feedback on this selection..."
+              rows={2}
+              className="w-full px-3 py-2 text-sm bg-transparent border-none outline-none resize-none placeholder:text-muted-foreground"
+            />
+            <div className="flex items-center justify-end px-1.5 pb-1.5">
+              <Button variant="primary" icon={<Send className="w-3 h-3" />}>
+                Send
+              </Button>
+            </div>
+          </label>
+        </div>
+      )}
     </div>
   );
 }
