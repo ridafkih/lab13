@@ -9,3 +9,18 @@ services:
     command: caddy run --config /etc/caddy/caddy.json
     volumes:
       - ./caddy.json:/etc/caddy/caddy.json:ro
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: lab-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: lab
+      POSTGRES_PASSWORD: lab
+      POSTGRES_DB: lab
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
