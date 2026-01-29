@@ -6,7 +6,7 @@ import type {
   SnapshotOf,
   DeltaOf,
   EventOf,
-  ServerMessage,
+  WireServerMessage,
 } from "@lab/multiplayer-shared";
 import { resolvePath, hasParams } from "@lab/multiplayer-shared";
 
@@ -100,28 +100,36 @@ export function createPublisher<S extends Schema>(
     return channelPath;
   }
 
-  function publish(channel: string, message: ServerMessage): void {
+  function publish(channel: string, message: WireServerMessage): void {
     const server = getServer();
     server.publish(channel, JSON.stringify(message));
   }
 
+  function getChannel(channelName: string) {
+    const channel = schema.channels[channelName];
+    if (!channel) {
+      throw new Error(`Unknown channel: ${channelName}`);
+    }
+    return channel;
+  }
+
   const publisher: Publisher<S> = {
     publishSnapshot(channelName, ...args) {
-      const channel = schema.channels[channelName];
+      const channel = getChannel(channelName);
       const { params, data } = extractArgs(channel.path, args);
       const resolvedPath = getResolvedPath(channel.path, params);
       publish(resolvedPath, { type: "snapshot", channel: resolvedPath, data });
     },
 
     publishDelta(channelName, ...args) {
-      const channel = schema.channels[channelName];
+      const channel = getChannel(channelName);
       const { params, data } = extractArgs(channel.path, args);
       const resolvedPath = getResolvedPath(channel.path, params);
       publish(resolvedPath, { type: "delta", channel: resolvedPath, data });
     },
 
     publishEvent(channelName, ...args) {
-      const channel = schema.channels[channelName];
+      const channel = getChannel(channelName);
       const { params, data } = extractArgs(channel.path, args);
       const resolvedPath = getResolvedPath(channel.path, params);
       publish(resolvedPath, { type: "event", channel: resolvedPath, data });

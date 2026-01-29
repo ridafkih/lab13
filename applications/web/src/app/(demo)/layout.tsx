@@ -33,11 +33,8 @@ export default function MainLayout({ children }: { children: ReactNode }) {
 
   const { useChannel } = useMultiplayer();
 
-  const projectsState = useChannel("projects");
-  const sessionsState = useChannel("sessions");
-
-  const projects = projectsState.status === "connected" ? projectsState.data : [];
-  const sessions = sessionsState.status === "connected" ? sessionsState.data : [];
+  const projects = useChannel("projects");
+  const sessions = useChannel("sessions");
 
   const projectId = params.projectId
     ? typeof params.projectId === "string"

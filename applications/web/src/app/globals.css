@@ -4,8 +4,7 @@
 @source "../../node_modules/@lab/ui/";
 
 :root {
-  --diffs-font-family:
-    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --diffs-font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --diffs-font-size: 12px;
   --diffs-line-height: 1.5;
   --diffs-tab-size: 2;

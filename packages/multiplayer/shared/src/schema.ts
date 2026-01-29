@@ -1,13 +1,12 @@
 import type { z } from "zod";
 
 export function defineChannel<
-  const TConfig extends {
-    path: string;
-    snapshot: z.ZodType;
-    delta?: z.ZodType;
-    event?: z.ZodType;
-  },
->(config: TConfig): TConfig {
+  const TPath extends string,
+  const TSnapshot extends z.ZodType,
+  const TDefault extends z.infer<TSnapshot>,
+  const TDelta extends z.ZodType = never,
+  const TEvent extends z.ZodType = never,
+>(config: { path: TPath; snapshot: TSnapshot; default: TDefault; delta?: TDelta; event?: TEvent }) {
   return config;
 }
 

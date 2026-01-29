@@ -1,6 +1,14 @@
 import { createContext, useEffect, useMemo, type ReactNode } from "react";
 import { Provider as JotaiProvider, useSetAtom } from "jotai";
-import type { Schema } from "@lab/multiplayer-shared";
+import type { z } from "zod";
+
+type AnyChannelConfig = {
+  path: string;
+  snapshot: z.ZodType;
+  default: unknown;
+  delta?: z.ZodType;
+  event?: z.ZodType;
+};
 import { ConnectionManager, type ConnectionConfig } from "./connection";
 import { connectionStateAtom } from "./atoms";
 import { createHooks } from "./hooks";
@@ -34,7 +42,10 @@ function MultiplayerProviderInner({ connection, children }: MultiplayerProviderI
   return <MultiplayerContext.Provider value={contextValue}>{children}</MultiplayerContext.Provider>;
 }
 
-export function createMultiplayerProvider<S extends Schema>(schema: S) {
+export function createMultiplayerProvider<
+  TChannels extends Record<string, AnyChannelConfig>,
+  TClientMessages extends z.ZodType,
+>(schema: { channels: TChannels; clientMessages: TClientMessages }) {
   const { useMultiplayer } = createHooks(schema);
 
   interface ProviderProps {

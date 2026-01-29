@@ -39,6 +39,7 @@ export const schema = defineSchema({
           name: z.string(),
         }),
       ),
+      default: [],
       delta: z.object({
         type: z.enum(["add", "update", "remove"]),
         project: z.object({ id: z.string(), name: z.string() }),
@@ -56,6 +57,7 @@ export const schema = defineSchema({
           isWorking: z.boolean().optional(),
         }),
       ),
+      default: [],
     }),
 
     sessionMetadata: defineChannel({
@@ -65,6 +67,7 @@ export const schema = defineSchema({
         lastMessage: z.string().optional(),
         participantCount: z.number(),
       }),
+      default: { title: "", participantCount: 0 },
       delta: z.object({
         title: z.string().optional(),
         lastMessage: z.string().optional(),
@@ -74,6 +77,7 @@ export const schema = defineSchema({
     sessionMessages: defineChannel({
       path: "session/{uuid}/messages",
       snapshot: z.array(MessageSchema),
+      default: [],
       delta: z.object({
         type: z.enum(["append", "update", "stream"]),
         message: MessageSchema.optional(),
@@ -89,6 +93,7 @@ export const schema = defineSchema({
           isTyping: z.boolean(),
         }),
       ),
+      default: [],
     }),
 
     sessionPromptEngineers: defineChannel({
@@ -100,11 +105,13 @@ export const schema = defineSchema({
           avatar: z.string().optional(),
         }),
       ),
+      default: [],
     }),
 
     sessionChangedFiles: defineChannel({
       path: "session/{uuid}/changed_files",
       snapshot: z.array(ReviewableFileSchema),
+      default: [],
       delta: z.object({
         type: z.enum(["add", "update", "remove"]),
         file: ReviewableFileSchema,
@@ -121,6 +128,7 @@ export const schema = defineSchema({
           prUrl: z.string().optional(),
         }),
       ),
+      default: [],
     }),
 
     sessionLinks: defineChannel({
@@ -132,17 +140,20 @@ export const schema = defineSchema({
           url: z.string(),
         }),
       ),
+      default: [],
     }),
 
     sessionLogs: defineChannel({
       path: "session/{uuid}/logs",
       snapshot: z.array(LogSourceSchema),
+      default: [],
       event: LogEntrySchema,
     }),
 
     sessionStream: defineChannel({
       path: "session/{uuid}/stream",
       snapshot: z.object({ active: z.boolean() }),
+      default: { active: false },
       event: z.object({
         type: z.enum(["token", "complete", "error"]),
         content: z.string().optional(),

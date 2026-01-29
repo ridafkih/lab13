@@ -2,11 +2,10 @@ import type { Server, ServerWebSocket } from "bun";
 import type {
   Schema,
   ChannelConfig,
-  ClientMessage,
-  ServerMessage,
-  ParamsFromPath,
+  WireClientMessage,
+  WireServerMessage,
   SnapshotOf,
-  ClientEventOf,
+  ClientMessageOf,
 } from "@lab/multiplayer-shared";
 import { parsePath } from "@lab/multiplayer-shared";
 
@@ -18,7 +17,11 @@ function hasChannel(value: object): value is { channel: unknown } {
   return "channel" in value;
 }
 
-function isClientMessage(value: unknown): value is ClientMessage {
+function hasData(value: object): value is { data: unknown } {
+  return "data" in value;
+}
+
+function isWireClientMessage(value: unknown): value is WireClientMessage {
   if (typeof value !== "object" || value === null) return false;
   if (!hasType(value)) return false;
 
@@ -26,13 +29,16 @@ function isClientMessage(value: unknown): value is ClientMessage {
 
   if (type === "ping") return true;
 
+  if (type === "message") {
+    return hasData(value);
+  }
+
   if (!hasChannel(value)) return false;
   if (typeof value.channel !== "string") return false;
 
   switch (type) {
     case "subscribe":
     case "unsubscribe":
-    case "event":
       return true;
     default:
       return false;
@@ -58,24 +64,26 @@ export type ChannelHandlers<TChannel extends ChannelConfig, TAuth> = {
   getSnapshot: (
     ctx: ChannelContext<TAuth, AnyParams>,
   ) => SnapshotOf<TChannel> | Promise<SnapshotOf<TChannel>>;
-
-  onEvent?: TChannel["clientEvent"] extends undefined
-    ? never
-    : (ctx: ChannelContext<TAuth, AnyParams>, event: unknown) => void | Promise<void>;
 };
 
 export type SchemaHandlers<S extends Schema, TAuth> = {
   [K in keyof S["channels"]]?: ChannelHandlers<S["channels"][K], TAuth>;
 };
 
-export interface HandlerOptions<TAuth> {
+export interface MessageContext<TAuth> {
+  auth: TAuth;
+  ws: ServerWebSocket<WebSocketData<TAuth>>;
+}
+
+export interface HandlerOptions<S extends Schema, TAuth> {
   authenticate: (token: string | null) => TAuth | Promise<TAuth>;
+  onMessage?: (ctx: MessageContext<TAuth>, message: ClientMessageOf<S>) => void | Promise<void>;
 }
 
 export function createWebSocketHandler<S extends Schema, TAuth>(
   schema: S,
   handlers: SchemaHandlers<S, TAuth>,
-  options: HandlerOptions<TAuth>,
+  options: HandlerOptions<S, TAuth>,
 ) {
   type WS = ServerWebSocket<WebSocketData<TAuth>>;
 
@@ -144,36 +152,25 @@ export function createWebSocketHandler<S extends Schema, TAuth>(
     ws.unsubscribe(channel);
   }
 
-  async function handleEvent(ws: WS, channel: string, data: unknown): Promise<void> {
-    const match = findChannelMatch(channel);
-    if (!match) return;
+  async function handleMessage(ws: WS, data: unknown): Promise<void> {
+    if (!options.onMessage) return;
 
-    const handler = handlers[match.name];
-    if (!handler?.onEvent) return;
+    const parseResult = schema.clientMessages.safeParse(data);
+    if (!parseResult.success) return;
 
-    if (!ws.data.subscriptions.has(channel)) {
-      sendMessage(ws, { type: "error", channel, error: "Not subscribed" });
-      return;
-    }
-
-    const ctx: ChannelContext<TAuth, Record<string, string>> = {
+    const ctx: MessageContext<TAuth> = {
       auth: ws.data.auth,
-      params: match.params,
       ws,
     };
 
     try {
-      await handler.onEvent(ctx, data);
-    } catch (err) {
-      sendMessage(ws, {
-        type: "error",
-        channel,
-        error: err instanceof Error ? err.message : "Event handling failed",
-      });
+      await options.onMessage(ctx, parseResult.data);
+    } catch {
+      // Message handling errors are silent
     }
   }
 
-  function sendMessage(ws: WS, message: ServerMessage): void {
+  function sendMessage(ws: WS, message: WireServerMessage): void {
     ws.send(JSON.stringify(message));
   }
 
@@ -186,7 +183,7 @@ export function createWebSocketHandler<S extends Schema, TAuth>(
       try {
         const raw: unknown = JSON.parse(typeof message === "string" ? message : message.toString());
 
-        if (!isClientMessage(raw)) {
+        if (!isWireClientMessage(raw)) {
           return;
         }
 
@@ -197,8 +194,8 @@ export function createWebSocketHandler<S extends Schema, TAuth>(
           case "unsubscribe":
             handleUnsubscribe(ws, raw.channel);
             break;
-          case "event":
-            await handleEvent(ws, raw.channel, raw.data);
+          case "message":
+            await handleMessage(ws, raw.data);
             break;
           case "ping":
             sendMessage(ws, { type: "pong" });

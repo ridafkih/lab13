@@ -8,6 +8,7 @@ export interface ChannelConfig<
 > {
   path: TPath;
   snapshot: TSnapshot;
+  default: z.infer<TSnapshot>;
   delta?: TDelta;
   event?: TEvent;
 }

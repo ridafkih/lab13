@@ -1,15 +1,21 @@
 import { useEffect, useCallback, useContext, useMemo } from "react";
 import { useAtom, useAtomValue } from "jotai";
-import type { ChannelConfig, SnapshotOf, Schema } from "@lab/multiplayer-shared";
+import type { ChannelConfig, SnapshotOf } from "@lab/multiplayer-shared";
 import { resolvePath, hasParams } from "@lab/multiplayer-shared";
 import type { ConnectionManager } from "./connection";
 import { connectionStateAtom, channelStateFamily, type ChannelState } from "./atoms";
 import { MultiplayerContext } from "./provider";
 import type { z } from "zod";
 
-type AnySchema = Schema<Record<string, ChannelConfig>, z.ZodType>;
+type AnyChannelConfig = {
+  path: string;
+  snapshot: z.ZodType;
+  default: unknown;
+  delta?: z.ZodType;
+  event?: z.ZodType;
+};
 
-type ChannelName<S extends AnySchema> = keyof S["channels"] & string;
+type ChannelName<TChannels> = keyof TChannels & string;
 
 type PathOf<C> = C extends { path: infer P } ? P : string;
 
@@ -17,12 +23,25 @@ type HasSessionParam<Path extends string> = Path extends `${string}{${string}}${
   ? true
   : false;
 
-type ChannelParams<S extends AnySchema, K extends ChannelName<S>> =
-  HasSessionParam<PathOf<S["channels"][K]> & string> extends true ? { uuid: string } : undefined;
+type ChannelParams<TChannels, K extends ChannelName<TChannels>> =
+  HasSessionParam<PathOf<TChannels[K]> & string> extends true ? { uuid: string } : undefined;
 
-export function createHooks<S extends AnySchema>(schema: S) {
-  type Channels = S["channels"];
-  type ClientMessage = z.infer<S["clientMessages"]>;
+function toStringRecord(obj: Record<string, unknown>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (typeof value === "string") {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+export function createHooks<
+  TChannels extends Record<string, AnyChannelConfig>,
+  TClientMessages extends z.ZodType,
+>(schema: { channels: TChannels; clientMessages: TClientMessages }) {
+  type Channels = TChannels;
+  type ClientMessage = z.infer<TClientMessages>;
 
   function useConnection(): ConnectionManager {
     const ctx = useContext(MultiplayerContext);
@@ -44,16 +63,21 @@ export function createHooks<S extends AnySchema>(schema: S) {
 
     const connectionState = useAtomValue(connectionStateAtom);
 
-    function useChannel<K extends ChannelName<S>>(
+    function useChannel<K extends ChannelName<Channels>>(
       channelName: K,
-      ...args: ChannelParams<S, K> extends undefined ? [] : [params: ChannelParams<S, K>]
-    ): ChannelState<SnapshotOf<Channels[K]>> {
-      const channel = schema.channels[channelName] as ChannelConfig;
-      const params = (args[0] ?? {}) as Record<string, string>;
+      ...args: ChannelParams<Channels, K> extends undefined
+        ? []
+        : [params: ChannelParams<Channels, K>]
+    ): SnapshotOf<Channels[K]> {
+      const channel = schema.channels[channelName];
+      if (!channel) {
+        throw new Error(`Unknown channel: ${channelName}`);
+      }
+      const params = args[0] ?? {};
 
       const resolvedPath = useMemo(() => {
         if (hasParams(channel.path)) {
-          return resolvePath(channel.path, params);
+          return resolvePath(channel.path, toStringRecord(params));
         }
         return channel.path;
       }, [channel.path, params]);
@@ -85,20 +109,26 @@ export function createHooks<S extends AnySchema>(schema: S) {
         };
       }, [resolvedPath, setState]);
 
-      return state;
+      if (state.status === "connected") {
+        return channel.snapshot.parse(state.data);
+      }
+      return channel.default;
     }
 
-    function useChannelEvent<K extends ChannelName<S>>(
+    function useChannelEvent<K extends ChannelName<Channels>>(
       channelName: K,
       callback: (
-        event: S["channels"][K] extends { event: z.ZodType }
-          ? z.infer<S["channels"][K]["event"]>
-          : never,
+        event: Channels[K] extends { event: z.ZodType } ? z.infer<Channels[K]["event"]> : never,
       ) => void,
-      ...args: ChannelParams<S, K> extends undefined ? [] : [params: ChannelParams<S, K>]
+      ...args: ChannelParams<Channels, K> extends undefined
+        ? []
+        : [params: ChannelParams<Channels, K>]
     ): void {
-      const channel = schema.channels[channelName] as ChannelConfig;
-      const params = (args[0] ?? {}) as Record<string, string>;
+      const channel = schema.channels[channelName];
+      if (!channel) {
+        throw new Error(`Unknown channel: ${channelName}`);
+      }
+      const params = args[0] ?? {};
 
       if (!channel.event) {
         throw new Error(`Channel "${channelName}" does not have events`);
@@ -108,7 +138,7 @@ export function createHooks<S extends AnySchema>(schema: S) {
 
       const resolvedPath = useMemo(() => {
         if (hasParams(channel.path)) {
-          return resolvePath(channel.path, params);
+          return resolvePath(channel.path, toStringRecord(params));
         }
         return channel.path;
       }, [channel.path, params]);
