@@ -165,7 +165,7 @@ export function SessionView({
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto chat-scroll-container"
+            className="flex-1 overflow-y-auto chat-scroll-container -mb-px"
           >
             {messages.map((messageState) => (
               <MessagePartsRenderer key={messageState.info.id} messageState={messageState} />

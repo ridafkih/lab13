@@ -24,7 +24,6 @@ export default function SessionPage() {
   const changedFiles = useChannel("sessionChangedFiles", { uuid: sessionId });
   const branches = useChannel("sessionBranches", { uuid: sessionId });
   const links = useChannel("sessionLinks", { uuid: sessionId });
-  const promptEngineers = useChannel("sessionPromptEngineers", { uuid: sessionId });
   const logSources = useChannel("sessionLogs", { uuid: sessionId });
   const sessionContainers = useChannel("sessionContainers", { uuid: sessionId });
 
@@ -68,7 +67,6 @@ export default function SessionPage() {
         onRespondToPermission={respondToPermission}
       />
       <SessionSidebar
-        promptEngineers={promptEngineers}
         branches={branches}
         tasks={[]}
         links={links}

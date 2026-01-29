@@ -49,7 +49,7 @@ export function ToolStatusBlock({ part }: ToolStatusBlockProps) {
     state.status === "completed" || state.status === "error" || state.status === "running";
 
   return (
-    <div className="border-b last:border-b-0 border-border bg-muted/30 min-w-0 overflow-hidden">
+    <div className="border-b border-border bg-muted/30 min-w-0 overflow-hidden">
       <button
         type="button"
         className={cn(

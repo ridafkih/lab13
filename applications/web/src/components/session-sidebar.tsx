@@ -2,12 +2,10 @@
 
 import { cn } from "@lab/ui/utils/cn";
 import { Copy } from "@lab/ui/components/copy";
-import { Avatar } from "@lab/ui/components/avatar";
 import { Checkbox } from "@lab/ui/components/checkbox";
 import { GitBranch, ExternalLink } from "lucide-react";
 import type { ReviewableFile } from "@/types/review";
 import { SidebarSection } from "./sidebar-section";
-import { AvatarGroup, AvatarGroupStack, AvatarGroupCount } from "./avatar-group";
 import {
   FileStatusItem,
   FileStatusItemCheckbox,
@@ -28,12 +26,6 @@ import {
   IconLabelItemLink,
 } from "./icon-label-item";
 import { LogsSection, type LogSource } from "./logs-section";
-
-type PromptEngineer = {
-  id: string;
-  name: string;
-  avatar?: string;
-};
 
 type Branch = {
   id: string;
@@ -62,7 +54,6 @@ type ContainerInfo = {
 };
 
 type SessionSidebarProps = {
-  promptEngineers: PromptEngineer[];
   branches: Branch[];
   tasks: Task[];
   links: Link[];
@@ -73,7 +64,6 @@ type SessionSidebarProps = {
 };
 
 export function SessionSidebar({
-  promptEngineers,
   branches,
   tasks,
   links,
@@ -94,25 +84,6 @@ export function SessionSidebar({
     <aside className="min-w-64 max-w-64 border-l border-border h-full flex flex-col">
       <div className="h-8 border-b border-border" />
       <div className="flex-1 overflow-y-auto">
-        <SidebarSection title="Prompt Engineers">
-          <AvatarGroup>
-            <AvatarGroupStack>
-              {promptEngineers.slice(0, 3).map((engineer) => (
-                <Avatar
-                  key={engineer.id}
-                  size="xs"
-                  fallback={engineer.name.slice(0, 2).toUpperCase()}
-                />
-              ))}
-            </AvatarGroupStack>
-            <AvatarGroupCount
-              count={promptEngineers.length}
-              singular="engineer"
-              plural="engineers"
-            />
-          </AvatarGroup>
-        </SidebarSection>
-
         <SidebarSection title="Changed Files">
           {reviewFiles.length === 0 ? (
             <Copy size="xs" muted>

@@ -37,7 +37,7 @@ function formatCost(cost: number): string {
 
 export function ThinkingIndicator({ part: _part }: StepStartBoundaryProps) {
   return (
-    <div className="flex items-center gap-2 px-4 py-2 border-b last:border-b-0 border-border bg-muted/30">
+    <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-muted/30">
       <Spinner size="xxs" />
       <Copy as="span" size="xs" muted>
         Thinking...
@@ -51,7 +51,7 @@ export function StepFinishBoundary({ part }: StepFinishBoundaryProps) {
   const costInfo = formatCost(part.cost);
 
   return (
-    <div className="flex items-center justify-end gap-2 px-4 py-1 border-b last:border-b-0 border-border bg-muted/20">
+    <div className="flex items-center justify-end gap-2 px-4 py-1 border-b border-border bg-muted/20">
       {tokenInfo && (
         <Copy as="span" size="xs" muted>
           {tokenInfo}
