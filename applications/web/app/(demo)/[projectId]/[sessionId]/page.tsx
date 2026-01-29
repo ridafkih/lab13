@@ -153,7 +153,7 @@ const exampleSidebarData = {
 
 const initialReviewFiles: ReviewableFile[] = [
   {
-    path: "auth/middleware.ts",
+    path: "src/features/authentication/middleware/auth/middleware.ts",
     changeType: "modified",
     status: "pending",
     originalContent: `import { NextRequest, NextResponse } from 'next/server';
@@ -197,7 +197,7 @@ export async function middleware(request: NextRequest) {
 }`,
   },
   {
-    path: "lib/session.ts",
+    path: "src/lib/authentication/session/session.ts",
     changeType: "modified",
     status: "pending",
     originalContent: `export interface Session {
@@ -239,7 +239,7 @@ function parseCookie(cookie: string, name: string): string | null {
 }`,
   },
   {
-    path: "components/auth-guard.tsx",
+    path: "src/components/authentication/guards/auth-guard.tsx",
     changeType: "created",
     status: "pending",
     originalContent: "",

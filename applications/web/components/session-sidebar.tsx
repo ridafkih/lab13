@@ -112,7 +112,10 @@ export function SessionSidebar({
           ) : (
             <div className="flex flex-col gap-1">
               {reviewFiles.map((file) => {
-                const filename = file.path.split("/").pop() ?? file.path;
+                const parts = file.path.split("/");
+                const filename = parts.pop() ?? file.path;
+                const parentFolder = parts.pop() ?? "";
+                const pathPrefix = parts.join("/");
                 const isDismissed = file.status === "dismissed";
 
                 return (
@@ -122,7 +125,7 @@ export function SessionSidebar({
                       onChange={() => onDismissFile(file.path)}
                     />
                     <FileStatusItemIcon changeType={file.changeType} />
-                    <FileStatusItemLabel dismissed={isDismissed}>{filename}</FileStatusItemLabel>
+                    <FileStatusItemLabel pathPrefix={pathPrefix} parentFolder={parentFolder} filename={filename} dismissed={isDismissed} />
                   </FileStatusItem>
                 );
               })}

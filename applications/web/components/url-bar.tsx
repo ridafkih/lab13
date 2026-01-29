@@ -9,7 +9,7 @@ interface UrlBarProps {
 export function UrlBar({ url, onRefresh }: UrlBarProps) {
   return (
     <div className="flex items-center bg-muted border border-border">
-      <Copy size="xs" muted className="flex-1 px-2 py-1.5 truncate font-mono">
+      <Copy size="xs" muted className="flex-1 px-2 py-1.5 truncate">
         {url}
       </Copy>
       <button
