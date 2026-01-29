@@ -18,6 +18,8 @@ interface ContainerListProps {
   onSelectContainer: (id: string) => void;
   onDeleteContainer: (id: string) => void;
   onCreateProject: () => void;
+  isCreating?: boolean;
+  error?: Error | null;
 }
 
 export function ContainerList({
@@ -30,6 +32,8 @@ export function ContainerList({
   onSelectContainer,
   onDeleteContainer,
   onCreateProject,
+  isCreating = false,
+  error,
 }: ContainerListProps) {
   return (
     <div className="flex flex-col gap-6">
@@ -78,11 +82,13 @@ export function ContainerList({
       </FormField>
 
       <Divider />
+      {error && <p className="text-red-500 text-sm">{error.message}</p>}
       <Button
         variant="primary"
         size="md"
         className="w-full"
         disabled={containers.length === 0}
+        loading={isCreating}
         onClick={onCreateProject}
       >
         Create Project

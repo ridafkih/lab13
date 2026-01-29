@@ -1,15 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Heading } from "@lab/ui/components/heading";
 import { Copy } from "@lab/ui/components/copy";
 import { ContainerList } from "@/components/new-project/container-list";
 import { ContainerConfig } from "@/components/new-project/container-config";
 import { createEmptyContainer, type Container } from "@/components/new-project/types";
+import { useCreateProject, useApiClient } from "@/lib/api";
 
 type View = { type: "list" } | { type: "config"; containerId: string };
 
 export default function NewProjectPage() {
+  const router = useRouter();
+  const client = useApiClient();
+  const { createProject, isLoading, error } = useCreateProject();
+
   const [name, setName] = useState("");
   const [containers, setContainers] = useState<Container[]>([]);
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -29,13 +35,16 @@ export default function NewProjectPage() {
     setContainers(containers.filter((c) => c.id !== id));
   };
 
-  const handleCreateProject = () => {
-    const project = {
-      name,
-      systemPrompt,
-      containers,
-    };
-    console.log("Creating project:", project);
+  const handleCreateProject = async () => {
+    const project = await createProject({ name, systemPrompt });
+
+    await Promise.all(
+      containers.map((container) =>
+        client.containers.create(project.id, { image: container.image }),
+      ),
+    );
+
+    router.push(`/${project.id}`);
   };
 
   const selectedContainer =
@@ -62,6 +71,8 @@ export default function NewProjectPage() {
             onSelectContainer={(id) => setView({ type: "config", containerId: id })}
             onDeleteContainer={deleteContainer}
             onCreateProject={handleCreateProject}
+            isCreating={isLoading}
+            error={error}
           />
         )}
 

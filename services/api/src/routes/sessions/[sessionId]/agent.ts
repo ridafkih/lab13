@@ -76,37 +76,34 @@ const POST: RouteHandler = async (_request, params) => {
     containers: agentContainers,
   });
 
-  // Type assertions needed due to complex generic inference in publisher
-  const pub = publisher as {
-    publishEvent(channel: string, params: { uuid: string }, data: unknown): void;
-    publishDelta(channel: string, params: { uuid: string }, data: unknown): void;
-  };
-
   agentSession.on("token", (content) => {
-    pub.publishEvent("sessionStream", { uuid: sessionId }, { type: "token", content });
+    publisher.publishEvent("sessionStream", { uuid: sessionId }, { type: "token", content });
   });
 
   agentSession.on("message", (message) => {
-    pub.publishDelta("sessionMessages", { uuid: sessionId }, { type: "append", message });
+    publisher.publishDelta("sessionMessages", { uuid: sessionId }, { type: "append", message });
   });
 
   agentSession.on("toolStart", (tool) => {
-    pub.publishDelta("sessionAgentTools", { uuid: sessionId }, { type: "add", tool });
+    publisher.publishDelta("sessionAgentTools", { uuid: sessionId }, { type: "add", tool });
   });
 
   agentSession.on("toolEnd", (tool) => {
-    pub.publishDelta("sessionAgentTools", { uuid: sessionId }, { type: "update", tool });
+    publisher.publishDelta("sessionAgentTools", { uuid: sessionId }, { type: "update", tool });
   });
 
   agentSession.on("complete", () => {
-    pub.publishEvent("sessionStream", { uuid: sessionId }, { type: "complete" });
+    publisher.publishEvent("sessionStream", { uuid: sessionId }, { type: "complete" });
   });
 
   agentSession.on("error", (error) => {
-    pub.publishEvent(
+    publisher.publishEvent(
       "sessionStream",
       { uuid: sessionId },
-      { type: "error", content: error.message },
+      {
+        type: "error",
+        content: error.message,
+      },
     );
   });
 

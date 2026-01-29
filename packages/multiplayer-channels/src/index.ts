@@ -38,6 +38,14 @@ const AgentToolSchema = z.object({
   error: z.string().optional(),
 });
 
+const SessionSchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  title: z.string(),
+  hasUnread: z.boolean().optional(),
+  isWorking: z.boolean().optional(),
+});
+
 export const schema = defineSchema({
   channels: {
     projects: defineChannel({
@@ -57,16 +65,12 @@ export const schema = defineSchema({
 
     sessions: defineChannel({
       path: "sessions",
-      snapshot: z.array(
-        z.object({
-          id: z.string(),
-          projectId: z.string(),
-          title: z.string(),
-          hasUnread: z.boolean().optional(),
-          isWorking: z.boolean().optional(),
-        }),
-      ),
+      snapshot: z.array(SessionSchema),
       default: [],
+      delta: z.object({
+        type: z.enum(["add", "update", "remove"]),
+        session: SessionSchema,
+      }),
     }),
 
     sessionMetadata: defineChannel({

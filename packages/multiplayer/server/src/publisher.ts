@@ -1,140 +1,111 @@
 import type { Server } from "bun";
-import type {
-  Schema,
-  ChannelConfig,
-  ParamsFromPath,
-  SnapshotOf,
-  DeltaOf,
-  EventOf,
-  WireServerMessage,
-} from "@lab/multiplayer-shared";
+import type { WireServerMessage } from "@lab/multiplayer-shared";
 import { resolvePath, hasParams } from "@lab/multiplayer-shared";
+import type { z } from "zod";
 
-type ChannelName<S extends Schema> = keyof S["channels"] & string;
+type AnyChannelConfig = {
+  path: string;
+  snapshot: z.ZodType;
+  default: unknown;
+  delta?: z.ZodType;
+  event?: z.ZodType;
+};
 
-type ChannelParams<S extends Schema, K extends ChannelName<S>> = ParamsFromPath<
-  S["channels"][K]["path"]
->;
+type AnySchema = {
+  channels: Record<string, AnyChannelConfig>;
+  clientMessages: z.ZodType;
+};
 
-type HasDelta<C extends ChannelConfig> = C["delta"] extends undefined ? false : true;
-type HasEvent<C extends ChannelConfig> = C["event"] extends undefined ? false : true;
+type ChannelName<S extends AnySchema> = keyof S["channels"] & string;
 
-export interface Publisher<S extends Schema> {
+type PathOf<C> = C extends { path: infer P extends string } ? P : string;
+
+type HasParams<Path extends string> = Path extends `${string}{${string}}${string}` ? true : false;
+
+type ParamsArg<Path extends string> = HasParams<Path> extends true ? { uuid: string } : undefined;
+
+type DataOf<C, Key extends "snapshot" | "delta" | "event"> = C extends { [K in Key]?: infer T }
+  ? T extends z.ZodType
+    ? z.infer<T>
+    : never
+  : never;
+
+export interface Publisher<S extends AnySchema> {
   publishSnapshot<K extends ChannelName<S>>(
     channelName: K,
-    ...args: keyof ChannelParams<S, K> extends never
-      ? [data: SnapshotOf<S["channels"][K]>]
-      : [params: ChannelParams<S, K>, data: SnapshotOf<S["channels"][K]>]
+    ...args: ParamsArg<PathOf<S["channels"][K]>> extends undefined
+      ? [data: DataOf<S["channels"][K], "snapshot">]
+      : [params: ParamsArg<PathOf<S["channels"][K]>>, data: DataOf<S["channels"][K], "snapshot">]
   ): void;
 
   publishDelta<K extends ChannelName<S>>(
     channelName: K,
-    ...args: HasDelta<S["channels"][K]> extends false
-      ? never
-      : keyof ChannelParams<S, K> extends never
-        ? [data: DeltaOf<S["channels"][K]>]
-        : [params: ChannelParams<S, K>, data: DeltaOf<S["channels"][K]>]
+    ...args: ParamsArg<PathOf<S["channels"][K]>> extends undefined
+      ? [data: DataOf<S["channels"][K], "delta">]
+      : [params: ParamsArg<PathOf<S["channels"][K]>>, data: DataOf<S["channels"][K], "delta">]
   ): void;
 
   publishEvent<K extends ChannelName<S>>(
     channelName: K,
-    ...args: HasEvent<S["channels"][K]> extends false
-      ? never
-      : keyof ChannelParams<S, K> extends never
-        ? [data: EventOf<S["channels"][K]>]
-        : [params: ChannelParams<S, K>, data: EventOf<S["channels"][K]>]
+    ...args: ParamsArg<PathOf<S["channels"][K]>> extends undefined
+      ? [data: DataOf<S["channels"][K], "event">]
+      : [params: ParamsArg<PathOf<S["channels"][K]>>, data: DataOf<S["channels"][K], "event">]
   ): void;
 }
 
-interface ExtractedArgs {
-  params: Record<string, string> | undefined;
-  data: unknown;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isStringRecord(value: unknown): value is Record<string, string> {
-  if (!isRecord(value)) return false;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   for (const key in value) {
-    if (typeof value[key] !== "string") return false;
+    if (typeof (value as Record<string, unknown>)[key] !== "string") return false;
   }
   return true;
 }
 
-function extractArgs(channelPath: string, args: unknown[]): ExtractedArgs {
+function extractArgs(
+  channelPath: string,
+  args: unknown[],
+): {
+  params: Record<string, string> | undefined;
+  data: unknown;
+} {
   if (hasParams(channelPath)) {
-    if (args.length < 2) {
-      throw new Error(`Expected params and data for parameterized channel`);
-    }
     const params = args[0];
     if (!isStringRecord(params)) {
       throw new Error(`Expected params to be an object with string values`);
     }
-    return {
-      params,
-      data: args[1],
-    };
+    return { params, data: args[1] };
   }
-  if (args.length < 1) {
-    throw new Error(`Expected data for channel`);
-  }
-  return {
-    params: undefined,
-    data: args[0],
-  };
+  return { params: undefined, data: args[0] };
 }
 
-export function createPublisher<S extends Schema>(
+export function createPublisher<S extends AnySchema>(
   schema: S,
   getServer: () => Server<unknown>,
 ): Publisher<S> {
-  function getResolvedPath(
-    channelPath: string,
-    params: Record<string, string> | undefined,
-  ): string {
-    if (hasParams(channelPath) && params) {
-      return resolvePath(channelPath, params);
-    }
-    return channelPath;
-  }
-
   function publish(channel: string, message: WireServerMessage): void {
-    const server = getServer();
-    server.publish(channel, JSON.stringify(message));
+    getServer().publish(channel, JSON.stringify(message));
   }
 
-  function getChannel(channelName: string) {
-    const channel = schema.channels[channelName];
-    if (!channel) {
-      throw new Error(`Unknown channel: ${channelName}`);
-    }
-    return channel;
-  }
-
-  const publisher: Publisher<S> = {
+  return {
     publishSnapshot(channelName, ...args) {
-      const channel = getChannel(channelName);
+      const channel = schema.channels[channelName];
       const { params, data } = extractArgs(channel.path, args);
-      const resolvedPath = getResolvedPath(channel.path, params);
-      publish(resolvedPath, { type: "snapshot", channel: resolvedPath, data });
+      const path = params ? resolvePath(channel.path, params) : channel.path;
+      publish(path, { type: "snapshot", channel: path, data });
     },
 
     publishDelta(channelName, ...args) {
-      const channel = getChannel(channelName);
+      const channel = schema.channels[channelName];
       const { params, data } = extractArgs(channel.path, args);
-      const resolvedPath = getResolvedPath(channel.path, params);
-      publish(resolvedPath, { type: "delta", channel: resolvedPath, data });
+      const path = params ? resolvePath(channel.path, params) : channel.path;
+      publish(path, { type: "delta", channel: path, data });
     },
 
     publishEvent(channelName, ...args) {
-      const channel = getChannel(channelName);
+      const channel = schema.channels[channelName];
       const { params, data } = extractArgs(channel.path, args);
-      const resolvedPath = getResolvedPath(channel.path, params);
-      publish(resolvedPath, { type: "event", channel: resolvedPath, data });
+      const path = params ? resolvePath(channel.path, params) : channel.path;
+      publish(path, { type: "event", channel: path, data });
     },
   };
-
-  return publisher;
 }

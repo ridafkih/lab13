@@ -6,6 +6,7 @@ import { sessions } from "@lab/database/schema/sessions";
 import { sessionContainers } from "@lab/database/schema/session-containers";
 import { eq } from "drizzle-orm";
 import { DockerClient } from "@lab/sandbox-docker";
+import { publisher } from "../../../index";
 
 import type { RouteHandler } from "../../../utils/route-handler";
 
@@ -106,6 +107,15 @@ const POST: RouteHandler = async (_request, params) => {
     await db.delete(sessions).where(eq(sessions.id, session.id));
     throw error;
   }
+
+  publisher.publishDelta("sessions", {
+    type: "add",
+    session: {
+      id: session.id,
+      projectId: session.projectId,
+      title: `Session ${session.id.slice(0, 8)}`,
+    },
+  });
 
   return Response.json(
     {

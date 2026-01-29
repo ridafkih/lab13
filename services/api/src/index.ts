@@ -8,6 +8,19 @@ const HTTP_NOT_FOUND = 404;
 const HTTP_METHOD_NOT_ALLOWED = 405;
 const HTTP_INTERNAL_SERVER_ERROR = 500;
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+function withCors(response: Response): Response {
+  for (const [key, value] of Object.entries(corsHeaders)) {
+    response.headers.set(key, value);
+  }
+  return response;
+}
+
 const router = new Bun.FileSystemRouter({
   dir: join(import.meta.dirname, "routes"),
   style: "nextjs",
@@ -25,6 +38,10 @@ const server = Bun.serve<WebSocketData<Auth>>({
   async fetch(request): Promise<Response | undefined> {
     const url = new URL(request.url);
 
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: corsHeaders });
+    }
+
     if (url.pathname === "/ws") {
       return upgrade(request, server);
     }
@@ -32,26 +49,29 @@ const server = Bun.serve<WebSocketData<Auth>>({
     const match = router.match(request);
 
     if (!match) {
-      return new Response("Not found", { status: HTTP_NOT_FOUND });
+      return withCors(new Response("Not found", { status: HTTP_NOT_FOUND }));
     }
 
     const module: unknown = await import(match.filePath);
 
     if (!isRouteModule(module)) {
-      return new Response("Internal server error", { status: HTTP_INTERNAL_SERVER_ERROR });
+      return withCors(
+        new Response("Internal server error", { status: HTTP_INTERNAL_SERVER_ERROR }),
+      );
     }
 
     if (!isHttpMethod(request.method)) {
-      return new Response("Method not allowed", { status: HTTP_METHOD_NOT_ALLOWED });
+      return withCors(new Response("Method not allowed", { status: HTTP_METHOD_NOT_ALLOWED }));
     }
 
     const handler = module[request.method];
 
     if (!handler) {
-      return new Response("Method not allowed", { status: HTTP_METHOD_NOT_ALLOWED });
+      return withCors(new Response("Method not allowed", { status: HTTP_METHOD_NOT_ALLOWED }));
     }
 
-    return handler(request, match.params);
+    const response = await handler(request, match.params);
+    return withCors(response);
   },
 });
 

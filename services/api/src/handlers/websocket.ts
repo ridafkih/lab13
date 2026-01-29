@@ -4,6 +4,9 @@ import {
   type SchemaHandlers,
   type HandlerOptions,
 } from "@lab/multiplayer-server";
+import { db } from "@lab/database/client";
+import { projects } from "@lab/database/schema/projects";
+import { sessions } from "@lab/database/schema/sessions";
 
 export interface Auth {
   userId: string;
@@ -13,10 +16,21 @@ type Schema = typeof schema;
 
 const handlers: SchemaHandlers<Schema, Auth> = {
   projects: {
-    getSnapshot: async () => [],
+    getSnapshot: async () => {
+      const allProjects = await db.select({ id: projects.id, name: projects.name }).from(projects);
+      return allProjects;
+    },
   },
   sessions: {
-    getSnapshot: async () => [],
+    getSnapshot: async () => {
+      const allSessions = await db
+        .select({
+          id: sessions.id,
+          projectId: sessions.projectId,
+        })
+        .from(sessions);
+      return allSessions.map((s) => ({ ...s, title: `Session ${s.id.slice(0, 8)}` }));
+    },
   },
   sessionMetadata: {
     getSnapshot: async () => ({ title: "", participantCount: 0 }),

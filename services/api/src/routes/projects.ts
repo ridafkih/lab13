@@ -1,5 +1,6 @@
 import { db } from "@lab/database/client";
 import { projects } from "@lab/database/schema/projects";
+import { publisher } from "../index";
 
 import type { RouteHandler } from "../utils/route-handler";
 
@@ -17,6 +18,12 @@ const POST: RouteHandler = async (request) => {
       systemPrompt: body.systemPrompt,
     })
     .returning();
+
+  publisher.publishDelta("projects", {
+    type: "add",
+    project: { id: project.id, name: project.name },
+  });
+
   return Response.json(project, { status: 201 });
 };
 

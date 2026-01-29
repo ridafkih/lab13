@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { MultiplayerProvider } from "@/lib/multiplayer/client";
+import { ApiClientProvider } from "@/lib/api";
 
 interface ProvidersProps {
   children: ReactNode;
@@ -13,12 +14,14 @@ export function Providers({ children }: ProvidersProps) {
   }
 
   return (
-    <MultiplayerProvider
-      config={{
-        url: process.env.NEXT_PUBLIC_WS_URL,
-      }}
-    >
-      {children}
-    </MultiplayerProvider>
+    <ApiClientProvider>
+      <MultiplayerProvider
+        config={{
+          url: process.env.NEXT_PUBLIC_WS_URL,
+        }}
+      >
+        {children}
+      </MultiplayerProvider>
+    </ApiClientProvider>
   );
 }
