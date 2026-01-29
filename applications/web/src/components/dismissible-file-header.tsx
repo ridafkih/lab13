@@ -1,11 +1,7 @@
 import type { ReactNode } from "react";
 import { cn } from "@lab/ui/utils/cn";
 import { Copy } from "@lab/ui/components/copy";
-import {
-  type FileChangeType,
-  fileChangeTypeIcons,
-  fileChangeTypeColors,
-} from "@/lib/file-change";
+import { type FileChangeType, fileChangeTypeIcons, fileChangeTypeColors } from "@/lib/file-change";
 
 export type { FileChangeType };
 

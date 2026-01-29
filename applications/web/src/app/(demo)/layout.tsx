@@ -132,7 +132,11 @@ export default function MainLayout({ children }: { children: ReactNode }) {
                     <SidebarPanel key={project.id}>
                       <SidebarHeader
                         action={
-                          <SidebarAction icon={<X />} label="Close" onClick={() => router.push("/")} />
+                          <SidebarAction
+                            icon={<X />}
+                            label="Close"
+                            onClick={() => router.push("/")}
+                          />
                         }
                       >
                         {project.name}

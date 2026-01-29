@@ -125,7 +125,12 @@ export function SessionSidebar({
                       onChange={() => onDismissFile(file.path)}
                     />
                     <FileStatusItemIcon changeType={file.changeType} />
-                    <FileStatusItemLabel pathPrefix={pathPrefix} parentFolder={parentFolder} filename={filename} dismissed={isDismissed} />
+                    <FileStatusItemLabel
+                      pathPrefix={pathPrefix}
+                      parentFolder={parentFolder}
+                      filename={filename}
+                      dismissed={isDismissed}
+                    />
                   </FileStatusItem>
                 );
               })}

@@ -2,11 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "@lab/ui/utils/cn";
 import { Copy } from "@lab/ui/components/copy";
 import { Checkbox } from "@lab/ui/components/checkbox";
-import {
-  type FileChangeType,
-  fileChangeTypeIcons,
-  fileChangeTypeColors,
-} from "@/lib/file-change";
+import { type FileChangeType, fileChangeTypeIcons, fileChangeTypeColors } from "@/lib/file-change";
 
 export type { FileChangeType };
 
@@ -44,7 +40,13 @@ export function FileStatusItemIcon({ changeType }: FileStatusItemIconProps) {
   return <Icon className={cn("size-3 shrink-0 mr-1", fileChangeTypeColors[changeType])} />;
 }
 
-export function FileStatusItemLabel({ pathPrefix, parentFolder, filename, dismissed, muted }: FileStatusItemLabelProps) {
+export function FileStatusItemLabel({
+  pathPrefix,
+  parentFolder,
+  filename,
+  dismissed,
+  muted,
+}: FileStatusItemLabelProps) {
   const hasPrefix = pathPrefix.length > 0;
   const hasParent = parentFolder.length > 0;
 
@@ -69,7 +71,9 @@ export function FileStatusItemLabel({ pathPrefix, parentFolder, filename, dismis
           <span className="shrink-0 text-muted-foreground">/</span>
         </>
       )}
-      <span className={cn("shrink-0 whitespace-nowrap", dismissed && "text-muted-foreground")}>{filename}</span>
+      <span className={cn("shrink-0 whitespace-nowrap", dismissed && "text-muted-foreground")}>
+        {filename}
+      </span>
     </Copy>
   );
 }

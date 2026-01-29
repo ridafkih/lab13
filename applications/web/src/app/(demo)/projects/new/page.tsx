@@ -10,7 +10,14 @@ import { Textarea } from "@lab/ui/components/textarea";
 import { Checkbox } from "@lab/ui/components/checkbox";
 import { FormField } from "@lab/ui/components/form-field";
 import { IconButton } from "@lab/ui/components/icon-button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@lab/ui/components/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@lab/ui/components/table";
 import { ActionGroup } from "@lab/ui/components/action-group";
 import { Divider } from "@lab/ui/components/divider";
 import { Plus, Container, Eye, EyeOff, Pencil, Trash2, Check, X } from "lucide-react";
@@ -350,7 +357,10 @@ export default function NewProjectPage() {
             )}
           </FormField>
 
-          <FormField label="System Prompt" hint="This will be injected in the system prompt, and is your opportunity to provide the agent some context.">
+          <FormField
+            label="System Prompt"
+            hint="This will be injected in the system prompt, and is your opportunity to provide the agent some context."
+          >
             <Textarea
               value={systemPrompt}
               onChange={(e) => setSystemPrompt(e.currentTarget.value)}
