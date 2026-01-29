@@ -22,7 +22,8 @@
     "packages": [
       "applications/*",
       "packages/*",
-      "packages/multiplayer/*"
+      "packages/multiplayer/*",
+      "services/*"
     ]
   }
 }

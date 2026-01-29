@@ -2,6 +2,7 @@ export {
   createWebSocketHandler,
   type WebSocketData,
   type ChannelContext,
+  type MessageContext,
   type ChannelHandlers,
   type SchemaHandlers,
   type HandlerOptions,
