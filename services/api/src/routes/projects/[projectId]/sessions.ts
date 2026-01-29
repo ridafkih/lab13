@@ -13,6 +13,7 @@ import { publisher } from "../../../publisher";
 
 const docker = new DockerClient();
 const WORKSPACES_VOLUME = "lab_session_workspaces";
+const WORKSPACES_HOST_PATH = "/var/lib/docker/volumes/lab_session_workspaces/_data";
 
 interface ContainerResult {
   id: string;
@@ -71,12 +72,31 @@ const POST: RouteHandler = async (_request, params) => {
         await docker.pullImage(containerDefinition.image);
       }
 
+      const imageWorkdir = await docker.getImageWorkdir(containerDefinition.image);
+      const sessionWorkspace = `/workspaces/${session.id}`;
+
+      if (imageWorkdir && imageWorkdir !== "/") {
+        const initId = await docker.createContainer({
+          image: containerDefinition.image,
+          command: [
+            "sh",
+            "-c",
+            `mkdir -p ${sessionWorkspace} && cp -r ${imageWorkdir}/. ${sessionWorkspace}/`,
+          ],
+          volumes: [{ source: WORKSPACES_VOLUME, target: "/workspaces" }],
+        });
+        await docker.startContainer(initId);
+        await docker.waitContainer(initId);
+        await docker.removeContainer(initId);
+      }
+
       const env: Record<string, string> = {};
       for (const envVar of envVars) {
         env[envVar.key] = envVar.value;
       }
 
-      const hostname = containerDefinition.hostname ?? containerDefinition.id;
+      const serviceHostname = containerDefinition.hostname ?? containerDefinition.id;
+      const uniqueHostname = `s-${session.id.slice(0, 8)}-${containerDefinition.id.slice(0, 8)}`;
 
       const projectName = `lab-${session.id}`;
       const containerName = `${projectName}-${containerDefinition.id}`;
@@ -84,15 +104,15 @@ const POST: RouteHandler = async (_request, params) => {
       const dockerId = await docker.createContainer({
         name: containerName,
         image: containerDefinition.image,
-        hostname,
+        hostname: uniqueHostname,
         networkMode: networkName,
         workdir: `/workspaces/${session.id}`,
         env: Object.keys(env).length > 0 ? env : undefined,
         ports: ports.map(({ port }) => ({ container: port, host: undefined })),
-        volumes: [{ source: WORKSPACES_VOLUME, target: "/workspaces" }],
+        volumes: [{ source: WORKSPACES_HOST_PATH, target: "/workspaces" }],
         labels: {
           "com.docker.compose.project": projectName,
-          "com.docker.compose.service": hostname,
+          "com.docker.compose.service": serviceHostname,
           "lab.session": session.id,
           "lab.project": projectId,
           "lab.container": containerDefinition.id,
@@ -124,7 +144,7 @@ const POST: RouteHandler = async (_request, params) => {
       if (Object.keys(portMap).length > 0) {
         clusterContainers.push({
           containerId: containerDefinition.id,
-          hostname,
+          hostname: uniqueHostname,
           ports: portMap,
         });
       }

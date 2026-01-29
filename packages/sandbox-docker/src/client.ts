@@ -84,6 +84,25 @@ export class DockerClient implements SandboxProvider {
     }
   }
 
+  async getImageWorkdir(ref: string): Promise<string> {
+    const info = await this.docker.getImage(ref).inspect();
+    return info.Config.WorkingDir || "/";
+  }
+
+  async getImageConfig(ref: string): Promise<{
+    workdir: string;
+    entrypoint: string[] | null;
+    cmd: string[] | null;
+  }> {
+    const info = await this.docker.getImage(ref).inspect();
+    const entrypoint = info.Config.Entrypoint;
+    return {
+      workdir: info.Config.WorkingDir || "/",
+      entrypoint: typeof entrypoint === "string" ? [entrypoint] : entrypoint || null,
+      cmd: info.Config.Cmd || null,
+    };
+  }
+
   async createContainer(options: ContainerCreateOptions): Promise<string> {
     const exposedPorts: Record<string, object> = {};
     const portBindings: Record<string, { HostPort: string }[]> = {};

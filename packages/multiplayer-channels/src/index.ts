@@ -164,14 +164,13 @@ export const schema = defineSchema({
   },
 
   clientMessages: z.discriminatedUnion("type", [
-    z
-      .object({
-        type: z.literal("send_message"),
-        id: z.string(),
-        content: z.string(),
-        timestamp: z.number(),
-      })
-      .passthrough(),
+    z.object({
+      type: z.literal("send_message"),
+      id: z.string(),
+      sessionId: z.string(),
+      content: z.string(),
+      timestamp: z.number(),
+    }),
     z
       .object({
         type: z.literal("set_typing"),
