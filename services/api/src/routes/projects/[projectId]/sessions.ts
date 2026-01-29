@@ -72,23 +72,22 @@ const POST: RouteHandler = async (_request, params) => {
         await docker.pullImage(containerDefinition.image);
       }
 
-      const imageWorkdir = await docker.getImageWorkdir(containerDefinition.image);
-      const sessionWorkspace = `/workspaces/${session.id}`;
+      const { workdir: imageWorkdir } = await docker.getImageConfig(containerDefinition.image);
+      const containerWorkspace = `/workspaces/${session.id}/${containerDefinition.id}`;
 
-      if (imageWorkdir && imageWorkdir !== "/") {
-        const initId = await docker.createContainer({
-          image: containerDefinition.image,
-          command: [
-            "sh",
-            "-c",
-            `mkdir -p ${sessionWorkspace} && cp -r ${imageWorkdir}/. ${sessionWorkspace}/`,
-          ],
-          volumes: [{ source: WORKSPACES_VOLUME, target: "/workspaces" }],
-        });
-        await docker.startContainer(initId);
-        await docker.waitContainer(initId);
-        await docker.removeContainer(initId);
-      }
+      const initCommand =
+        imageWorkdir && imageWorkdir !== "/"
+          ? `mkdir -p ${containerWorkspace} && cp -r ${imageWorkdir}/. ${containerWorkspace}/`
+          : `mkdir -p ${containerWorkspace}`;
+
+      const initId = await docker.createContainer({
+        image: containerDefinition.image,
+        command: ["sh", "-c", initCommand],
+        volumes: [{ source: WORKSPACES_VOLUME, target: "/workspaces" }],
+      });
+      await docker.startContainer(initId);
+      await docker.waitContainer(initId);
+      await docker.removeContainer(initId);
 
       const env: Record<string, string> = {};
       for (const envVar of envVars) {
@@ -106,7 +105,7 @@ const POST: RouteHandler = async (_request, params) => {
         image: containerDefinition.image,
         hostname: uniqueHostname,
         networkMode: networkName,
-        workdir: `/workspaces/${session.id}`,
+        workdir: containerWorkspace,
         env: Object.keys(env).length > 0 ? env : undefined,
         ports: ports.map(({ port }) => ({ container: port, host: undefined })),
         volumes: [{ source: WORKSPACES_HOST_PATH, target: "/workspaces" }],
