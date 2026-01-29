@@ -33,3 +33,12 @@ export interface Session {
   createdAt: string;
   updatedAt: string;
 }
+
+export type AgentStatus = { status: "inactive" } | { status: "active"; isProcessing: boolean };
+
+export interface Model {
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  name: string;
+}

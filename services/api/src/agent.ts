@@ -8,8 +8,8 @@ if (!opencodeUrl) {
 
 const agentManager = new AgentManager({ opencodeUrl });
 
-export function createAgentSession(config: AgentSessionConfig) {
-  const session = agentManager.createSession(config);
+export async function createAgentSession(config: AgentSessionConfig) {
+  const session = await agentManager.createSession(config);
   const { sessionId } = config;
 
   session.on("token", (content) => {
@@ -51,6 +51,6 @@ export function hasAgentSession(sessionId: string) {
   return agentManager.hasSession(sessionId);
 }
 
-export function destroyAgentSession(sessionId: string) {
+export async function destroyAgentSession(sessionId: string) {
   return agentManager.destroySession(sessionId);
 }

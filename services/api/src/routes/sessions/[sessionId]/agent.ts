@@ -19,11 +19,11 @@ const GET: RouteHandler = async (_request, params) => {
 
   const session = getAgentSession(sessionId);
   if (!session) {
-    return Response.json({ active: false });
+    return Response.json({ status: "inactive" });
   }
 
   return Response.json({
-    active: true,
+    status: "active",
     isProcessing: session.isActive,
     messages: await session.getMessages(),
   });
@@ -73,20 +73,24 @@ const POST: RouteHandler = async (_request, params) => {
     }),
   );
 
-  createAgentSession({
-    sessionId,
-    projectId: session.projectId,
-    systemPrompt: project.systemPrompt ?? undefined,
-    containers: agentContainers,
-  });
-
-  return Response.json({ started: true }, { status: 201 });
+  try {
+    await createAgentSession({
+      sessionId,
+      projectId: session.projectId,
+      systemPrompt: project.systemPrompt ?? undefined,
+      containers: agentContainers,
+    });
+    return Response.json({ started: true }, { status: 201 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to start agent";
+    return Response.json({ error: message }, { status: 500 });
+  }
 };
 
 const DELETE: RouteHandler = async (_request, params) => {
   const { sessionId } = params;
 
-  const destroyed = destroyAgentSession(sessionId);
+  const destroyed = await destroyAgentSession(sessionId);
 
   if (!destroyed) {
     return Response.json({ error: "No agent session found" }, { status: 404 });

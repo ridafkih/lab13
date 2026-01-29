@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { type ReactNode, useState, useCallback, type KeyboardEvent } from "react";
 import { Copy } from "@lab/ui/components/copy";
 import { Button } from "@lab/ui/components/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@lab/ui/components/tabs";
@@ -14,6 +14,7 @@ import {
   FileSearch,
   Frame,
   Radio,
+  Loader2,
 } from "lucide-react";
 import { ReviewPanel } from "./review-panel";
 import type { ReviewableFile } from "@/types/review";
@@ -32,6 +33,14 @@ import {
   ChatInputActionsEnd,
 } from "./chat-input";
 import { UrlBar } from "./url-bar";
+import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@lab/ui/components/dropdown";
+
+type Model = {
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  name: string;
+};
 
 type ToolCallStatus = "in_progress" | "completed";
 
@@ -57,6 +66,12 @@ type SessionViewProps = {
   onFrameRefresh?: () => void;
   streamUrl?: string;
   onStreamRefresh?: () => void;
+  onSendMessage?: (content: string, model?: { providerId: string; modelId: string }) => void;
+  isSending?: boolean;
+  isProcessing?: boolean;
+  models?: Model[];
+  selectedModel?: Model | null;
+  onModelChange?: (model: Model) => void;
 };
 
 export function SessionView({
@@ -67,7 +82,37 @@ export function SessionView({
   onFrameRefresh,
   streamUrl,
   onStreamRefresh,
+  onSendMessage,
+  isSending = false,
+  isProcessing = false,
+  models = [],
+  selectedModel,
+  onModelChange,
 }: SessionViewProps) {
+  const [inputValue, setInputValue] = useState("");
+
+  const handleSend = useCallback(() => {
+    const trimmed = inputValue.trim();
+    if (!trimmed || isSending || !onSendMessage) return;
+    const model = selectedModel
+      ? { providerId: selectedModel.providerId, modelId: selectedModel.modelId }
+      : undefined;
+    onSendMessage(trimmed, model);
+    setInputValue("");
+  }, [inputValue, isSending, onSendMessage, selectedModel]);
+
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        handleSend();
+      }
+    },
+    [handleSend],
+  );
+
+  const isDisabled = isSending || isProcessing;
+
   return (
     <Tabs defaultValue="chat" className="flex-1 flex flex-col h-full min-w-0">
       <TabsList className="grid-cols-[1fr_1fr_1fr_1fr]">
@@ -113,7 +158,13 @@ export function SessionView({
           })}
         </div>
         <ChatInput>
-          <ChatInputTextarea placeholder="Send a message..." />
+          <ChatInputTextarea
+            placeholder="Send a message..."
+            value={inputValue}
+            onChange={(event) => setInputValue(event.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={isDisabled}
+          />
           <ChatInputActions>
             <ChatInputActionsStart>
               <Button variant="secondary" icon={<Plus className="size-3" />}>
@@ -122,15 +173,41 @@ export function SessionView({
               <Button variant="secondary" icon={<Zap className="size-3" />}>
                 Skills
               </Button>
-              <Button variant="secondary" icon={<SlidersHorizontal className="size-3" />}>
-                Model
-              </Button>
+              <Dropdown>
+                <DropdownTrigger asChild>
+                  <Button variant="secondary" icon={<SlidersHorizontal className="size-3" />}>
+                    {selectedModel ? selectedModel.name : "Model"}
+                  </Button>
+                </DropdownTrigger>
+                <DropdownMenu>
+                  {models.map((model) => (
+                    <DropdownItem
+                      key={`${model.providerId}/${model.modelId}`}
+                      onClick={() => onModelChange?.(model)}
+                    >
+                      {model.name}
+                    </DropdownItem>
+                  ))}
+                  {models.length === 0 && <DropdownItem disabled>No models available</DropdownItem>}
+                </DropdownMenu>
+              </Dropdown>
             </ChatInputActionsStart>
             <ChatInputActionsEnd>
               <Button variant="secondary" icon={<Volume2 className="size-3" />}>
                 Voice
               </Button>
-              <Button variant="primary" icon={<Send className="size-3" />}>
+              <Button
+                variant="primary"
+                icon={
+                  isSending ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <Send className="size-3" />
+                  )
+                }
+                onClick={handleSend}
+                disabled={isDisabled || !inputValue.trim()}
+              >
                 Send
               </Button>
             </ChatInputActionsEnd>

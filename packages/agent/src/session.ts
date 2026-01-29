@@ -6,6 +6,7 @@ import type {
   AgentMessage,
   ToolInvocation,
   SessionContainer,
+  ModelSelection,
 } from "./types";
 
 export class AgentSession extends EventEmitter {
@@ -13,6 +14,7 @@ export class AgentSession extends EventEmitter {
   private client: OpencodeClient;
   private containers: Map<string, SessionContainer>;
   private isProcessing = false;
+  private opencodeSessionId: string | null = null;
 
   constructor(config: AgentSessionConfig, opencodeUrl: string) {
     super();
@@ -25,6 +27,16 @@ export class AgentSession extends EventEmitter {
     for (const container of config.containers) {
       this.containers.set(container.id, container);
     }
+  }
+
+  async init(): Promise<void> {
+    const response = await this.client.session.create({});
+
+    if (response.error || !response.data) {
+      throw new Error(`Failed to create OpenCode session: ${JSON.stringify(response.error)}`);
+    }
+
+    this.opencodeSessionId = response.data.id;
   }
 
   override on<K extends keyof AgentEvents>(event: K, listener: AgentEvents[K]): this {
@@ -51,9 +63,13 @@ export class AgentSession extends EventEmitter {
   }
 
   async getMessages(): Promise<AgentMessage[]> {
+    if (!this.opencodeSessionId) {
+      return [];
+    }
+
     try {
       const response = await this.client.session.messages({
-        path: { id: this.config.sessionId },
+        path: { id: this.opencodeSessionId },
       });
 
       if (!response.data) {
@@ -85,7 +101,11 @@ export class AgentSession extends EventEmitter {
     };
   }
 
-  async sendMessage(content: string): Promise<void> {
+  async sendMessage(content: string, model?: ModelSelection): Promise<void> {
+    if (!this.opencodeSessionId) {
+      throw new Error("Session not initialized");
+    }
+
     if (this.isProcessing) {
       throw new Error("Agent is already processing a message");
     }
@@ -101,21 +121,23 @@ export class AgentSession extends EventEmitter {
     this.emit("message", userMessage);
 
     try {
-      await this.processWithOpenCode(content);
+      await this.processWithOpenCode(content, model);
     } catch (error) {
       this.emit("error", error instanceof Error ? error : new Error(String(error)));
+      throw error;
     } finally {
       this.isProcessing = false;
       this.emit("complete");
     }
   }
 
-  private async processWithOpenCode(userMessage: string): Promise<void> {
+  private async processWithOpenCode(userMessage: string, model?: ModelSelection): Promise<void> {
     const response = await this.client.session.prompt({
-      path: { id: this.config.sessionId },
+      path: { id: this.opencodeSessionId! },
       body: {
         parts: [{ type: "text", text: userMessage }],
         system: this.config.systemPrompt,
+        model: model ? { providerID: model.providerId, modelID: model.modelId } : undefined,
       },
     });
 
@@ -177,8 +199,16 @@ export class AgentSession extends EventEmitter {
     this.isProcessing = false;
   }
 
-  destroy(): void {
+  async destroy(): Promise<void> {
     this.stop();
     this.removeAllListeners();
+
+    if (this.opencodeSessionId) {
+      try {
+        await this.client.session.delete({ path: { id: this.opencodeSessionId } });
+      } catch (error) {
+        console.error("Failed to delete OpenCode session:", error);
+      }
+    }
   }
 }

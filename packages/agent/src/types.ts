@@ -42,3 +42,8 @@ export interface AgentEvents {
   complete: () => void;
   error: (error: Error) => void;
 }
+
+export interface ModelSelection {
+  providerId: string;
+  modelId: string;
+}

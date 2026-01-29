@@ -4,10 +4,16 @@ import { getAgentSession } from "../../../../agent";
 
 const MessageBodySchema = z.object({
   message: z.string().min(1),
+  model: z
+    .object({
+      providerId: z.string(),
+      modelId: z.string(),
+    })
+    .optional(),
 });
 
 const POST: RouteHandler = async (request, params) => {
-  const { sessionId } = params;
+  const sessionId = Array.isArray(params.sessionId) ? params.sessionId[0] : params.sessionId;
 
   const session = getAgentSession(sessionId);
   if (!session) {
@@ -30,11 +36,13 @@ const POST: RouteHandler = async (request, params) => {
     return Response.json({ error: "Agent is currently processing a message" }, { status: 409 });
   }
 
-  session.sendMessage(parsed.data.message).catch((error) => {
-    console.error(`Error processing message for session ${sessionId}:`, error);
-  });
-
-  return Response.json({ accepted: true }, { status: 202 });
+  try {
+    await session.sendMessage(parsed.data.message, parsed.data.model);
+    return Response.json({ accepted: true }, { status: 202 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to process message";
+    return Response.json({ error: message }, { status: 500 });
+  }
 };
 
 export { POST };

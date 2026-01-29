@@ -1,17 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { SessionView } from "@/components/session-view";
 import { SessionSidebar } from "@/components/session-sidebar";
 import type { ReviewableFile } from "@/types/review";
 import { useMultiplayer } from "@/lib/multiplayer/client";
+import { useAgent, useModels } from "@/lib/api";
+import type { Model } from "@lab/client";
 
 export default function SessionPage() {
   const params = useParams();
   const sessionId = typeof params.sessionId !== "string" ? "" : params.sessionId;
 
-  const { send, connectionState, useChannel } = useMultiplayer();
+  const { send, connectionState, useChannel, useChannelEvent } = useMultiplayer();
+  const { sendMessage, isSending, state, setProcessingComplete } = useAgent(sessionId);
+  const isProcessing = state.status === "active" && state.isProcessing;
+
+  const handleStreamEvent = useCallback(
+    (event: { type: "token" | "complete" | "error"; content?: string }) => {
+      if (event.type === "complete" || event.type === "error") {
+        setProcessingComplete();
+      }
+    },
+    [setProcessingComplete],
+  );
+
+  useChannelEvent("sessionStream", handleStreamEvent, { uuid: sessionId });
+  const { models } = useModels();
+  const [selectedModel, setSelectedModel] = useState<Model | null>(null);
 
   const messages = useChannel("sessionMessages", { uuid: sessionId });
   const changedFiles = useChannel("sessionChangedFiles", { uuid: sessionId });
@@ -24,8 +41,11 @@ export default function SessionPage() {
   const [localReviewFiles, setLocalReviewFiles] = useState<ReviewableFile[]>([]);
   const reviewFiles = changedFiles.length > 0 ? changedFiles : localReviewFiles;
 
-  const _handleSendMessage = (content: string) => {
-    send(sessionId, { type: "send_message", content });
+  const handleSendMessage = async (
+    content: string,
+    model?: { providerId: string; modelId: string },
+  ) => {
+    await sendMessage(content, model);
   };
 
   const _handleTyping = (isTyping: boolean) => {
@@ -56,6 +76,12 @@ export default function SessionPage() {
         }))}
         reviewFiles={reviewFiles}
         onDismissFile={handleDismissFile}
+        onSendMessage={handleSendMessage}
+        isSending={isSending}
+        isProcessing={isProcessing}
+        models={models}
+        selectedModel={selectedModel}
+        onModelChange={setSelectedModel}
       />
       <SessionSidebar
         promptEngineers={promptEngineers}
