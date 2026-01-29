@@ -350,7 +350,7 @@ export default function NewProjectPage() {
             )}
           </FormField>
 
-          <FormField label="System Prompt" hint="Instructions for the agent">
+          <FormField label="System Prompt" hint="This will be injected in the system prompt, and is your opportunity to provide the agent some context.">
             <Textarea
               value={systemPrompt}
               onChange={(e) => setSystemPrompt(e.currentTarget.value)}

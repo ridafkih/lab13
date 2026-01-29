@@ -13,7 +13,11 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         ref={ref}
         type="button"
         aria-label={label}
-        className={cn("p-1 text-muted-foreground hover:text-foreground hover:bg-muted", className)}
+        className={cn(
+          "p-1 text-muted-foreground hover:text-foreground hover:bg-muted",
+          "focus-visible:outline focus-visible:outline-offset-px focus-visible:outline-ring",
+          className,
+        )}
         {...props}
       >
         <span className="size-3 [&>svg]:size-3">{icon}</span>

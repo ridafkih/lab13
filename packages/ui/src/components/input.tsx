@@ -11,7 +11,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       <input
         ref={ref}
         className={cn(
-          "flex-1 bg-muted border border-border px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground",
+          "flex-1 bg-muted border border-border px-2 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline focus-visible:outline-offset-px focus-visible:outline-ring",
           mono && "font-mono",
           className,
         )}

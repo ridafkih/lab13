@@ -51,7 +51,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           "flex items-center justify-center",
           sizeStyles[size],
           variantStyles[variant],
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          "focus-visible:outline focus-visible:outline-offset-px focus-visible:outline-ring",
           "disabled:pointer-events-none disabled:opacity-50",
           className,
         )}

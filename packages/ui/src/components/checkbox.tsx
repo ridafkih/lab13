@@ -30,6 +30,7 @@ export const Checkbox = forwardRef<HTMLButtonElement, CheckboxProps>(
           onClick={() => onChange?.(!checked)}
           className={cn(
             "border flex items-center justify-center shrink-0",
+            "focus-visible:outline focus-visible:outline-offset-px focus-visible:outline-ring",
             styles.box,
             checked ? "border-foreground bg-foreground text-background" : "border-muted-foreground",
           )}

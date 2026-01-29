@@ -9,7 +9,11 @@ interface InputGroupProps {
 export function InputGroup({ children, className }: InputGroupProps) {
   return (
     <div
-      className={cn("flex items-center gap-2 bg-muted border border-border px-2 py-1.5", className)}
+      className={cn(
+        "flex items-center gap-2 bg-muted border border-border px-2 py-1.5",
+        "focus-within:outline focus-within:outline-1 focus-within:outline-offset-px focus-within:outline-ring",
+        className,
+      )}
     >
       {children}
     </div>

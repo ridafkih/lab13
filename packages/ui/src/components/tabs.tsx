@@ -83,7 +83,7 @@ export function TabsTrigger({ value, className, children, disabled, ...props }: 
       tabIndex={isSelected ? 0 : -1}
       className={cn(
         "inline-flex items-center justify-center gap-1.5 px-3 py-1 text-xs",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        "focus-visible:outline focus-visible:outline-offset-px focus-visible:outline-ring",
         "disabled:pointer-events-none disabled:opacity-50",
         isSelected
           ? "bg-background text-foreground"

@@ -14,7 +14,7 @@ export const Table = forwardRef<HTMLTableElement, TableProps>(
   ({ className, columns, style, ...props }, ref) => (
     <table
       ref={ref}
-      className={cn("w-full text-sm", columns && "grid [&>*]:contents", className)}
+      className={cn("w-full text-sm", columns && "grid *:contents", className)}
       style={columns ? ({ ...style, gridTemplateColumns: columns } as React.CSSProperties) : style}
       {...props}
     />
@@ -63,7 +63,7 @@ export const TableCell = forwardRef<HTMLTableCellElement, TdHTMLAttributes<HTMLT
   ({ className, ...props }, ref) => (
     <td
       ref={ref}
-      className={cn("px-2 py-1.5 text-xs border-b border-border", className)}
+      className={cn("px-2 py-1.5 text-xs border-b border-border flex items-center", className)}
       {...props}
     />
   ),
