@@ -1,0 +1,26 @@
+{
+  "name": "@lab/sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "typesVersions": {
+    "*": {
+      "*": ["src/*"]
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./sandbox": {
+      "types": "./src/sandbox/index.ts",
+      "default": "./src/sandbox/index.ts"
+    }
+  },
+  "scripts": {
+    "types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

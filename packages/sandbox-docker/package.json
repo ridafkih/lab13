@@ -1,0 +1,22 @@
+{
+  "name": "@lab/sandbox-docker",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lab/sdk": "workspace:*",
+    "dockerode": "^4.0.4"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3.3.34",
+    "typescript": "^5"
+  }
+}
