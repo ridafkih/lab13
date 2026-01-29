@@ -1,4 +1,5 @@
 import { Button } from "@lab/ui/components/button";
+import { Input } from "@lab/ui/components/input";
 import { Textarea } from "@lab/ui/components/textarea";
 import { FormField } from "@lab/ui/components/form-field";
 import { Divider } from "@lab/ui/components/divider";
@@ -8,6 +9,8 @@ import { ContainerCard } from "./container-card";
 import type { Container as ContainerType } from "./types";
 
 interface ContainerListProps {
+  name: string;
+  onNameChange: (value: string) => void;
   containers: ContainerType[];
   systemPrompt: string;
   onSystemPromptChange: (value: string) => void;
@@ -18,6 +21,8 @@ interface ContainerListProps {
 }
 
 export function ContainerList({
+  name,
+  onNameChange,
   containers,
   systemPrompt,
   onSystemPromptChange,
@@ -28,6 +33,26 @@ export function ContainerList({
 }: ContainerListProps) {
   return (
     <div className="flex flex-col gap-6">
+      <FormField label="Project Name">
+        <Input
+          value={name}
+          onChange={(e) => onNameChange(e.currentTarget.value)}
+          placeholder="My Project"
+        />
+      </FormField>
+
+      <FormField
+        label="System Prompt"
+        hint="This will be injected in the system prompt, and is your opportunity to provide the agent some context."
+      >
+        <Textarea
+          value={systemPrompt}
+          onChange={(e) => onSystemPromptChange(e.currentTarget.value)}
+          placeholder="You are a helpful coding assistant..."
+          rows={4}
+        />
+      </FormField>
+
       <FormField label="Containers" hint="Add containers to your project">
         <div className="flex flex-col gap-2">
           {containers.length === 0 ? (
@@ -50,18 +75,6 @@ export function ContainerList({
             Add Container
           </Button>
         </div>
-      </FormField>
-
-      <FormField
-        label="System Prompt"
-        hint="This will be injected in the system prompt, and is your opportunity to provide the agent some context."
-      >
-        <Textarea
-          value={systemPrompt}
-          onChange={(e) => onSystemPromptChange(e.currentTarget.value)}
-          placeholder="You are a helpful coding assistant..."
-          rows={12}
-        />
       </FormField>
 
       <Divider />

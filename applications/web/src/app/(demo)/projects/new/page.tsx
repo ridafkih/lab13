@@ -10,6 +10,7 @@ import { createEmptyContainer, type Container } from "@/components/new-project/t
 type View = { type: "list" } | { type: "config"; containerId: string };
 
 export default function NewProjectPage() {
+  const [name, setName] = useState("");
   const [containers, setContainers] = useState<Container[]>([]);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [view, setView] = useState<View>({ type: "list" });
@@ -30,6 +31,7 @@ export default function NewProjectPage() {
 
   const handleCreateProject = () => {
     const project = {
+      name,
       systemPrompt,
       containers,
     };
@@ -51,6 +53,8 @@ export default function NewProjectPage() {
 
         {view.type === "list" && (
           <ContainerList
+            name={name}
+            onNameChange={setName}
             containers={containers}
             systemPrompt={systemPrompt}
             onSystemPromptChange={setSystemPrompt}

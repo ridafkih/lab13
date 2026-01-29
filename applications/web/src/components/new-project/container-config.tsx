@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Copy } from "@lab/ui/components/copy";
 import { Button } from "@lab/ui/components/button";
 import { Input } from "@lab/ui/components/input";
 import { InputGroup, InputGroupIcon, InputGroupInput } from "@lab/ui/components/input-group";
@@ -17,7 +16,7 @@ import {
   TableRow,
 } from "@lab/ui/components/table";
 import { ActionGroup } from "@lab/ui/components/action-group";
-import { Plus, Container, Eye, EyeOff, Pencil, Trash2, Check, X, ArrowLeft } from "lucide-react";
+import { Plus, Container, Eye, EyeOff, Pencil, Trash2, Check, X } from "lucide-react";
 import type { Container as ContainerType } from "./types";
 
 interface ContainerConfigProps {
@@ -134,20 +133,6 @@ export function ContainerConfig({ container, onUpdate, onBack }: ContainerConfig
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={<ArrowLeft className="size-4" />}
-          onClick={onBack}
-        >
-          Back
-        </Button>
-        <Copy size="sm" muted>
-          Configure Container
-        </Copy>
-      </div>
-
       <FormField label="Container Image" hint="e.g., ghcr.io/ridafkih/agent-playground:main">
         <InputGroup>
           <InputGroupIcon>
@@ -372,9 +357,14 @@ export function ContainerConfig({ container, onUpdate, onBack }: ContainerConfig
         )}
       </FormField>
 
-      <Button variant="primary" size="md" className="w-full" onClick={onBack}>
-        Done
-      </Button>
+      <div className="flex flex-col gap-2">
+        <Button variant="secondary" size="md" className="w-full" onClick={onBack}>
+          Back
+        </Button>
+        <Button variant="primary" size="md" className="w-full" onClick={onBack}>
+          Done
+        </Button>
+      </div>
     </div>
   );
 }
