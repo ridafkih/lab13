@@ -203,10 +203,6 @@ export function createWebSocketHandler<S extends Schema, TAuth>(
   }
 
   const websocketHandler = {
-    async open(ws: WS) {
-      // Connection opened
-    },
-
     async message(ws: WS, message: string | Buffer) {
       try {
         const raw: unknown = JSON.parse(typeof message === "string" ? message : message.toString());

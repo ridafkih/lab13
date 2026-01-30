@@ -9,187 +9,206 @@ import { readFileSync, existsSync, readdirSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Subprocess } from "bun";
 
-const PROFILE_DIR = process.env.AGENT_BROWSER_PROFILE_DIR;
+export interface DaemonSession {
+  sessionId: string;
+  port: number;
+  ready: boolean;
+}
 
-const activeSessions = new Map<string, { port: number; ready: boolean }>();
-const daemonProcesses = new Map<string, Subprocess>();
+export interface StartResult {
+  type: "started" | "already_running";
+  sessionId: string;
+  port: number;
+  ready: boolean;
+}
 
-const BASE_STREAM_PORT = parseInt(process.env.AGENT_BROWSER_STREAM_PORT ?? "9224", 10);
-let nextStreamPort = BASE_STREAM_PORT + 1;
+export interface StopResult {
+  type: "stopped" | "not_found";
+  sessionId: string;
+}
 
-function initializeFromExistingDaemons(): void {
-  const socketDir = getSocketDir();
-  if (!existsSync(socketDir)) return;
+export interface DaemonManagerConfig {
+  baseStreamPort: number;
+  profileDir?: string;
+}
 
-  const files = readdirSync(socketDir);
-  const streamFiles = files.filter((f) => f.endsWith(".stream"));
+export interface DaemonManager {
+  start(sessionId: string): Promise<StartResult>;
+  stop(sessionId: string): StopResult;
+  getSession(sessionId: string): DaemonSession | null;
+  getAllSessions(): DaemonSession[];
+  isRunning(sessionId: string): boolean;
+  isReady(sessionId: string): boolean;
+}
 
-  for (const streamFile of streamFiles) {
-    const sessionId = streamFile.replace(".stream", "");
-    if (sessionId === "default") continue;
+export function createDaemonManager(config: DaemonManagerConfig): DaemonManager {
+  const activeSessions = new Map<string, { port: number; ready: boolean }>();
+  const daemonProcesses = new Map<string, Subprocess>();
+  let nextStreamPort = config.baseStreamPort + 1;
 
-    try {
-      const streamPortPath = getStreamPortFile(sessionId);
-      if (!existsSync(streamPortPath)) continue;
+  const initializeFromExistingDaemons = (): void => {
+    const socketDir = getSocketDir();
+    if (!existsSync(socketDir)) return;
 
-      const port = parseInt(readFileSync(streamPortPath, "utf-8").trim(), 10);
-      if (isNaN(port)) continue;
+    const files = readdirSync(socketDir);
+    const streamFiles = files.filter((f) => f.endsWith(".stream"));
 
-      if (agentIsDaemonRunning(sessionId)) {
-        activeSessions.set(sessionId, { port, ready: true });
-        if (port >= nextStreamPort) {
-          nextStreamPort = port + 1;
+    for (const streamFile of streamFiles) {
+      const sessionId = streamFile.replace(".stream", "");
+      if (sessionId === "default") continue;
+
+      try {
+        const streamPortPath = getStreamPortFile(sessionId);
+        if (!existsSync(streamPortPath)) continue;
+
+        const port = parseInt(readFileSync(streamPortPath, "utf-8").trim(), 10);
+        if (isNaN(port)) continue;
+
+        if (agentIsDaemonRunning(sessionId)) {
+          activeSessions.set(sessionId, { port, ready: true });
+          if (port >= nextStreamPort) {
+            nextStreamPort = port + 1;
+          }
+        } else {
+          cleanupSocket(sessionId);
         }
-      } else {
-        cleanupSocket(sessionId);
+      } catch {
+        // Ignore errors reading files
       }
-    } catch {
-      // Ignore errors reading files
     }
-  }
-}
+  };
 
-initializeFromExistingDaemons();
+  const allocatePort = (): number => nextStreamPort++;
 
-function allocatePort(): number {
-  return nextStreamPort++;
-}
+  const killDaemonProcess = (sessionId: string): boolean => {
+    const subprocess = daemonProcesses.get(sessionId);
+    if (subprocess) {
+      try {
+        subprocess.kill("SIGTERM");
+        daemonProcesses.delete(sessionId);
+        cleanupSocket(sessionId);
+        return true;
+      } catch (error) {
+        console.warn(`[DaemonManager] Failed to kill subprocess for ${sessionId}:`, error);
+        daemonProcesses.delete(sessionId);
+      }
+    }
 
-export function isDaemonRunning(sessionId: string): boolean {
-  return agentIsDaemonRunning(sessionId);
-}
-
-function killDaemonProcess(sessionId: string): boolean {
-  const subprocess = daemonProcesses.get(sessionId);
-  if (subprocess) {
     try {
-      subprocess.kill("SIGTERM");
-      daemonProcesses.delete(sessionId);
+      const pidFile = getPidFile(sessionId);
+      if (!existsSync(pidFile)) return false;
+
+      const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
+      if (isNaN(pid)) return false;
+
+      process.kill(pid, "SIGTERM");
       cleanupSocket(sessionId);
       return true;
     } catch (error) {
-      console.warn(`Failed to kill tracked daemon process for session ${sessionId}:`, error);
-      daemonProcesses.delete(sessionId);
-    }
-  }
-
-  try {
-    const pidFile = getPidFile(sessionId);
-    if (!existsSync(pidFile)) {
+      console.warn(`[DaemonManager] Failed to kill process for ${sessionId}:`, error);
       return false;
     }
-
-    const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
-    if (isNaN(pid)) {
-      return false;
-    }
-
-    process.kill(pid, "SIGTERM");
-    cleanupSocket(sessionId);
-
-    return true;
-  } catch (error) {
-    console.warn(`Failed to kill daemon process for session ${sessionId}:`, error);
-    return false;
-  }
-}
-
-export function getSessionPort(sessionId: string): number | undefined {
-  return activeSessions.get(sessionId)?.port;
-}
-
-export function isSessionActive(sessionId: string): boolean {
-  return activeSessions.has(sessionId);
-}
-
-export function isSessionReady(sessionId: string): boolean {
-  return activeSessions.get(sessionId)?.ready ?? false;
-}
-
-export function getActiveSessions(): Array<{ sessionId: string; port: number; ready: boolean }> {
-  return [...activeSessions.entries()].map(([sessionId, { port, ready }]) => ({
-    sessionId,
-    port,
-    ready,
-  }));
-}
-
-export async function startSessionDaemon(
-  sessionId: string,
-  options: { url?: string } = {},
-): Promise<{ type: "started" | "already_running"; sessionId: string; port: number; ready: boolean }> {
-  const existing = activeSessions.get(sessionId);
-  if (existing) {
-    return { type: "already_running", sessionId, port: existing.port, ready: existing.ready };
-  }
-
-  const port = allocatePort();
-
-  activeSessions.set(sessionId, { port, ready: false });
-
-  const daemonPath = require.resolve("agent-browser/dist/daemon.js");
-
-  const env: Record<string, string> = {
-    ...process.env,
-    AGENT_BROWSER_DAEMON: "1",
-    AGENT_BROWSER_SESSION: sessionId,
-    AGENT_BROWSER_STREAM_PORT: String(port),
-    AGENT_BROWSER_SOCKET_DIR: getSocketDir(),
   };
 
-  if (PROFILE_DIR) {
-    const profilePath = join(PROFILE_DIR, sessionId);
-    if (!existsSync(profilePath)) {
-      mkdirSync(profilePath, { recursive: true });
-    }
-    env.AGENT_BROWSER_PROFILE = profilePath;
-  }
-
-  const subprocess = Bun.spawn(["bun", "run", daemonPath], {
-    env,
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-
-  daemonProcesses.set(sessionId, subprocess);
-
-  subprocess.exited.then((exitCode) => {
-    console.log(`Daemon exited for session ${sessionId} with code ${exitCode}`);
-    daemonProcesses.delete(sessionId);
-    activeSessions.delete(sessionId);
-  });
-
-  const pollReady = async () => {
+  const pollUntilReady = async (sessionId: string, port: number): Promise<void> => {
     for (let i = 0; i < 50; i++) {
       await new Promise((resolve) => setTimeout(resolve, 100));
       if (agentIsDaemonRunning(sessionId)) {
         const session = activeSessions.get(sessionId);
         if (session) {
           session.ready = true;
-          console.log(`Daemon ready for session: ${sessionId} on port ${port}`);
+          console.log(`[DaemonManager] Ready: ${sessionId} on port ${port}`);
         }
         return;
       }
     }
-    console.error(`Daemon failed to become ready for session ${sessionId}`);
+    console.error(`[DaemonManager] Timeout waiting for ${sessionId} to become ready`);
     activeSessions.delete(sessionId);
   };
 
-  pollReady();
+  // Initialize on creation
+  initializeFromExistingDaemons();
 
-  console.log(`Starting daemon for session: ${sessionId} on port ${port}`);
-  return { type: "started", sessionId, port, ready: false };
-}
+  return {
+    async start(sessionId: string): Promise<StartResult> {
+      const existing = activeSessions.get(sessionId);
+      if (existing) {
+        return { type: "already_running", sessionId, port: existing.port, ready: existing.ready };
+      }
 
-export function stopSessionDaemon(sessionId: string): { type: "stopped" | "not_found"; sessionId: string } {
-  const wasTracked = activeSessions.has(sessionId);
-  const killed = killDaemonProcess(sessionId);
+      const port = allocatePort();
+      activeSessions.set(sessionId, { port, ready: false });
 
-  activeSessions.delete(sessionId);
+      const daemonPath = require.resolve("agent-browser/dist/daemon.js");
 
-  if (!wasTracked && !killed) {
-    return { type: "not_found", sessionId };
-  }
+      const env: Record<string, string> = {
+        ...process.env,
+        AGENT_BROWSER_DAEMON: "1",
+        AGENT_BROWSER_SESSION: sessionId,
+        AGENT_BROWSER_STREAM_PORT: String(port),
+        AGENT_BROWSER_SOCKET_DIR: getSocketDir(),
+      } as Record<string, string>;
 
-  console.log(`Stopped daemon for session: ${sessionId}`);
-  return { type: "stopped", sessionId };
+      if (config.profileDir) {
+        const profilePath = join(config.profileDir, sessionId);
+        if (!existsSync(profilePath)) {
+          mkdirSync(profilePath, { recursive: true });
+        }
+        env.AGENT_BROWSER_PROFILE = profilePath;
+      }
+
+      const subprocess = Bun.spawn(["bun", "run", daemonPath], {
+        env,
+        stdio: ["ignore", "inherit", "inherit"],
+      });
+
+      daemonProcesses.set(sessionId, subprocess);
+
+      subprocess.exited.then((exitCode) => {
+        console.log(`[DaemonManager] Exited: ${sessionId} (code ${exitCode})`);
+        daemonProcesses.delete(sessionId);
+        activeSessions.delete(sessionId);
+      });
+
+      pollUntilReady(sessionId, port);
+
+      console.log(`[DaemonManager] Starting: ${sessionId} on port ${port}`);
+      return { type: "started", sessionId, port, ready: false };
+    },
+
+    stop(sessionId: string): StopResult {
+      const wasTracked = activeSessions.has(sessionId);
+      const killed = killDaemonProcess(sessionId);
+      activeSessions.delete(sessionId);
+
+      if (!wasTracked && !killed) {
+        return { type: "not_found", sessionId };
+      }
+
+      console.log(`[DaemonManager] Stopped: ${sessionId}`);
+      return { type: "stopped", sessionId };
+    },
+
+    getSession(sessionId: string): DaemonSession | null {
+      const session = activeSessions.get(sessionId);
+      if (!session) return null;
+      return { sessionId, port: session.port, ready: session.ready };
+    },
+
+    getAllSessions(): DaemonSession[] {
+      return [...activeSessions.entries()].map(([sessionId, { port, ready }]) => ({
+        sessionId,
+        port,
+        ready,
+      }));
+    },
+
+    isRunning(sessionId: string): boolean {
+      return activeSessions.has(sessionId) && agentIsDaemonRunning(sessionId);
+    },
+
+    isReady(sessionId: string): boolean {
+      return activeSessions.get(sessionId)?.ready ?? false;
+    },
+  };
 }

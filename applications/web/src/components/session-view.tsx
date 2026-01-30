@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import { ReviewPanel } from "./review-panel";
 import type { ReviewableFile } from "@/types/review";
-import { MessageBlock } from "./message-block";
 import { OpencodeParts } from "./opencode-parts";
 import { OpencodePermissionDialog } from "./opencode-permission-dialog";
 import { BrowserStream } from "./browser-stream";
@@ -96,10 +95,6 @@ export function SessionView({
   messages,
   reviewFiles,
   onDismissFile,
-  frameUrl,
-  onFrameRefresh,
-  streamUrl,
-  onStreamRefresh,
   onSendMessage,
   isSending = false,
   isProcessing = false,

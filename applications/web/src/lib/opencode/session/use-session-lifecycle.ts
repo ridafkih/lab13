@@ -27,7 +27,7 @@ export function useSessionLifecycle(labSessionId: string): UseSessionLifecycleRe
     });
   }, [labSessionId]);
 
-  const [opencodeSessionId, setOpencodeSessionId] = useState<string | null>(null);
+  const [_opencodeSessionId, setOpencodeSessionId] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 

@@ -3,11 +3,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "start": "bun src/entrypoint.ts",
+    "start": "bun src/server.ts",
     "types": "tsc --noEmit"
   },
   "dependencies": {
-    "agent-browser": "^0.8.4"
+    "@lab/browser-protocol": "workspace:*",
+    "agent-browser": "^0.8.4",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "bun-types": "^1.2.11",
