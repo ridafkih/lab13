@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@lab/client": "workspace:*",
-    "@lab/multiplayer-channels": "workspace:*",
     "@lab/multiplayer-client": "workspace:*",
     "@lab/multiplayer-sdk": "workspace:*",
     "@lab/ui": "workspace:*",

@@ -45,3 +45,20 @@ export type WireServerMessage =
   | { type: "event"; channel: string; data: unknown }
   | { type: "error"; channel: string; error: string }
   | { type: "pong" };
+
+export type ChannelName<S extends Schema> = keyof S["channels"] & string;
+
+export type PathOf<C extends ChannelConfig> = C["path"];
+
+export type HasParams<Path extends string> = Path extends `${string}:${string}` ? true : false;
+
+export type ParamsFor<Path extends string> =
+  HasParams<Path> extends true ? { uuid: string } : undefined;
+
+export type DataOf<C, Key extends "snapshot" | "delta" | "event"> = C extends {
+  [K in Key]?: infer T;
+}
+  ? T extends z.ZodType
+    ? z.infer<T>
+    : never
+  : never;

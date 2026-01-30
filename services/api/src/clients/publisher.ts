@@ -1,4 +1,4 @@
-import { schema } from "@lab/multiplayer-channels";
+import { schema } from "@lab/multiplayer-sdk";
 import { server } from "./server";
 import { createPublisher } from "@lab/multiplayer-server";
 

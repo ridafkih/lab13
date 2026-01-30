@@ -27,10 +27,6 @@
       "entry": ["src/*.ts"],
       "project": ["src/**/*.ts"]
     },
-    "packages/multiplayer-channels": {
-      "entry": ["src/*.ts"],
-      "project": ["src/**/*.ts"]
-    },
     "packages/multiplayer-client": {
       "entry": ["src/*.ts"],
       "project": ["src/**/*.ts"]

@@ -1,6 +1,7 @@
 import { isDaemonRunning } from "agent-browser";
 import type { Subprocess } from "bun";
 import type { DaemonManager, DaemonManagerConfig, DaemonSession, StartResult, StopResult } from "../types/daemon";
+import type { DaemonEvent, DaemonEventHandler } from "../types/events";
 import { spawnDaemon, killSubprocess, killByPidFile } from "./daemon-process";
 import { recoverSession, discoverExistingSessions } from "./daemon-recovery";
 
@@ -9,9 +10,20 @@ export type { DaemonManager, DaemonManagerConfig, DaemonSession, StartResult, St
 export function createDaemonManager(config: DaemonManagerConfig): DaemonManager {
   const activeSessions = new Map<string, number>();
   const daemonProcesses = new Map<string, Subprocess>();
+  const eventHandlers = new Set<DaemonEventHandler>();
   let nextStreamPort = config.baseStreamPort + 1;
 
   const allocatePort = (): number => nextStreamPort++;
+
+  const emit = (event: DaemonEvent): void => {
+    for (const handler of eventHandlers) {
+      try {
+        handler(event);
+      } catch (error) {
+        console.error("[DaemonManager] Event handler error:", error);
+      }
+    }
+  };
 
   const recoveryCallbacks = {
     onRecover: (sessionId: string, port: number) => {
@@ -47,11 +59,28 @@ export function createDaemonManager(config: DaemonManagerConfig): DaemonManager 
       const subprocess = spawnDaemon({ sessionId, port, profileDir: config.profileDir });
       daemonProcesses.set(sessionId, subprocess);
 
+      emit({ type: "daemon:started", sessionId, timestamp: Date.now(), data: { port } });
+
       subprocess.exited.then((exitCode) => {
         console.log(`[DaemonManager] Exited: ${sessionId} (code ${exitCode})`);
         daemonProcesses.delete(sessionId);
         activeSessions.delete(sessionId);
+        emit({ type: "daemon:stopped", sessionId, timestamp: Date.now(), data: { exitCode: exitCode ?? undefined } });
       });
+
+      const pollForReady = async () => {
+        const maxAttempts = 30;
+        const pollInterval = 100;
+        for (let i = 0; i < maxAttempts; i++) {
+          if (isDaemonRunning(sessionId)) {
+            emit({ type: "daemon:ready", sessionId, timestamp: Date.now(), data: { port } });
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        }
+        emit({ type: "daemon:error", sessionId, timestamp: Date.now(), data: { error: "Timeout waiting for daemon ready" } });
+      };
+      pollForReady();
 
       console.log(`[DaemonManager] Starting: ${sessionId} on port ${port}`);
       return { type: "started", sessionId, port, ready: false };
@@ -94,6 +123,13 @@ export function createDaemonManager(config: DaemonManagerConfig): DaemonManager 
 
     isReady(sessionId: string): boolean {
       return activeSessions.has(sessionId) && isDaemonRunning(sessionId);
+    },
+
+    onEvent(handler: DaemonEventHandler): () => void {
+      eventHandlers.add(handler);
+      return () => {
+        eventHandlers.delete(handler);
+      };
     },
   };
 }

@@ -6,9 +6,9 @@ import type {
   OrchestratorConfig,
   StateChangeHandler,
   ErrorHandler,
+  DaemonEvent,
 } from "../types/orchestrator";
-import { createReconciler } from "./reconciler";
-import { createReconcilerLoop } from "./reconciler-loop";
+import { createEventDrivenReconciler } from "./event-driven-reconciler";
 import { createSessionManager } from "./session-manager";
 
 export type { Orchestrator, OrchestratorConfig, StateChangeHandler, ErrorHandler } from "../types/orchestrator";
@@ -41,16 +41,10 @@ export const createOrchestrator = (
     },
   };
 
-  const reconciler = createReconciler(notifyingStateStore, daemonController, {
+  const reconciler = createEventDrivenReconciler(notifyingStateStore, daemonController, {
     maxRetries: config.maxRetries,
     getFirstExposedPort: config.getFirstExposedPort,
   });
-
-  const reconcilerLoop = createReconcilerLoop(
-    reconciler,
-    config.reconcileIntervalMs,
-    notifyError,
-  );
 
   const getSnapshot = async (sessionId: string): Promise<SessionSnapshot> => {
     const dbState = await stateStore.getState(sessionId);
@@ -77,6 +71,7 @@ export const createOrchestrator = (
 
       if (count === 1) {
         await notifyingStateStore.setDesiredState(sessionId, "running");
+        await reconciler.handleDesiredStateChange(sessionId);
       }
 
       return getSnapshot(sessionId);
@@ -93,6 +88,7 @@ export const createOrchestrator = (
               sessions.resetSession(sessionId);
               try {
                 await notifyingStateStore.setDesiredState(sessionId, "stopped");
+                await reconciler.handleDesiredStateChange(sessionId);
               } catch (error) {
                 console.warn(`[Orchestrator] Failed to set desired state for ${sessionId}:`, error);
               }
@@ -123,12 +119,20 @@ export const createOrchestrator = (
 
     launchBrowser: (sessionId) => daemonController.launch(sessionId),
 
-    startReconciler: () => reconcilerLoop.start(),
+    startReconciler: () => {},
 
-    stopReconciler: () => reconcilerLoop.stop(),
+    stopReconciler: () => {},
 
     onStateChange: (handler) => stateChangeHandlers.push(handler),
 
     onError: (handler) => errorHandlers.push(handler),
+
+    async handleDaemonEvent(event: DaemonEvent) {
+      try {
+        await reconciler.handleDaemonEvent(event);
+      } catch (error) {
+        notifyError(error);
+      }
+    },
   };
 };

@@ -23,7 +23,6 @@ COPY --from=build /app/packages/database/src ./packages/database/src
 COPY --from=build /app/packages/sandbox-docker/src ./packages/sandbox-docker/src
 COPY --from=build /app/packages/multiplayer-server/src ./packages/multiplayer-server/src
 COPY --from=build /app/packages/multiplayer-sdk/src ./packages/multiplayer-sdk/src
-COPY --from=build /app/packages/multiplayer-channels/src ./packages/multiplayer-channels/src
 COPY --from=build /app/packages/browser-protocol/src ./packages/browser-protocol/src
 
 ENV NODE_ENV=production

@@ -1,28 +1,21 @@
 import { useEffect, useCallback, useContext, useMemo } from "react";
 import { useAtom, useAtomValue } from "jotai";
-import type { ChannelConfig, SnapshotOf } from "@lab/multiplayer-sdk";
+import type {
+  ChannelConfig,
+  Schema,
+  SnapshotOf,
+  ChannelName,
+  PathOf,
+  HasParams,
+} from "@lab/multiplayer-sdk";
 import { resolvePath, hasParams } from "@lab/multiplayer-sdk";
 import type { ConnectionManager } from "./connection";
 import { connectionStateAtom, channelStateFamily, type ChannelState } from "./atoms";
 import { MultiplayerContext } from "./provider";
 import type { z } from "zod";
 
-type AnyChannelConfig = {
-  path: string;
-  snapshot: z.ZodType;
-  default: unknown;
-  delta?: z.ZodType;
-  event?: z.ZodType;
-};
-
-type ChannelName<TChannels> = keyof TChannels & string;
-
-type PathOf<C> = C extends { path: infer P } ? P : string;
-
-type HasSessionParam<Path extends string> = Path extends `${string}:${string}` ? true : false;
-
-type ChannelParams<TChannels, K extends ChannelName<TChannels>> =
-  HasSessionParam<PathOf<TChannels[K]> & string> extends true ? { uuid: string } : undefined;
+type ChannelParams<S extends Schema, K extends ChannelName<S>> =
+  HasParams<PathOf<S["channels"][K]>> extends true ? { uuid: string } : undefined;
 
 function toStringRecord(obj: Record<string, unknown>): Record<string, string> {
   const result: Record<string, string> = {};
@@ -34,12 +27,8 @@ function toStringRecord(obj: Record<string, unknown>): Record<string, string> {
   return result;
 }
 
-export function createHooks<
-  TChannels extends Record<string, AnyChannelConfig>,
-  TClientMessages extends z.ZodType,
->(schema: { channels: TChannels; clientMessages: TClientMessages }) {
-  type Channels = TChannels;
-  type ClientMessage = z.infer<TClientMessages>;
+export function createHooks<S extends Schema>(schema: S) {
+  type ClientMessage = z.infer<S["clientMessages"]>;
 
   function useConnection(): ConnectionManager {
     const context = useContext(MultiplayerContext);
@@ -61,12 +50,10 @@ export function createHooks<
 
     const connectionState = useAtomValue(connectionStateAtom);
 
-    function useChannel<K extends ChannelName<Channels>>(
+    function useChannel<K extends ChannelName<S>>(
       channelName: K,
-      ...args: ChannelParams<Channels, K> extends undefined
-        ? []
-        : [params: ChannelParams<Channels, K>]
-    ): SnapshotOf<Channels[K]> {
+      ...args: ChannelParams<S, K> extends undefined ? [] : [params: ChannelParams<S, K>]
+    ): SnapshotOf<S["channels"][K]> {
       const channel = schema.channels[channelName];
       if (!channel) {
         throw new Error(`Unknown channel: ${channelName}`);
@@ -119,12 +106,10 @@ export function createHooks<
         : never
       : never;
 
-    function useChannelEvent<K extends ChannelName<Channels>>(
+    function useChannelEvent<K extends ChannelName<S>>(
       channelName: K,
-      callback: (event: EventOf<Channels[K]>) => void,
-      ...args: ChannelParams<Channels, K> extends undefined
-        ? []
-        : [params: ChannelParams<Channels, K>]
+      callback: (event: EventOf<S["channels"][K]>) => void,
+      ...args: ChannelParams<S, K> extends undefined ? [] : [params: ChannelParams<S, K>]
     ): void {
       const channel = schema.channels[channelName];
       if (!channel) {
@@ -207,14 +192,14 @@ function applyArrayDelta(array: unknown[], delta: Record<string, unknown>): unkn
     case "remove": {
       if (!item) return array;
       const key = getKey(item);
-      return array.filter((el) => !isIdentifiable(el) || getKey(el) !== key);
+      return array.filter((element) => !isIdentifiable(element) || getKey(element) !== key);
     }
 
     case "update": {
       if (!item) return array;
       const key = getKey(item);
-      return array.map((el) =>
-        isIdentifiable(el) && getKey(el) === key ? { ...el, ...item } : el,
+      return array.map((element) =>
+        isIdentifiable(element) && getKey(element) === key ? { ...element, ...item } : element,
       );
     }
 

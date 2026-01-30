@@ -8,9 +8,11 @@ import {
   createOrchestrator,
 } from "@lab/browser-protocol";
 import { createFrameReceiver } from "./frame-receiver";
+import { createDaemonEventSubscriber } from "./daemon-event-subscriber";
 
 export interface BrowserServiceConfig {
   browserWsHost: string;
+  browserDaemonUrl: string;
   cleanupDelayMs: number;
   reconcileIntervalMs: number;
   maxRetries: number;
@@ -39,7 +41,10 @@ export const createBrowserService = async (
   deps: BrowserServiceDependencies,
 ): Promise<BrowserService> => {
   const { stateStore, daemonController, publishFrame, publishStateChange } = deps;
-  const { browserWsHost, cleanupDelayMs, reconcileIntervalMs, maxRetries } = config;
+  const { browserWsHost, browserDaemonUrl, cleanupDelayMs, reconcileIntervalMs, maxRetries } =
+    config;
+
+  const eventSubscriber = createDaemonEventSubscriber({ browserDaemonUrl });
 
   const frameReceivers = new Map<string, FrameReceiver>();
 
@@ -102,6 +107,12 @@ export const createBrowserService = async (
     console.error("[BrowserOrchestrator] Reconciliation error:", error);
   });
 
+  eventSubscriber.onEvent((event) => {
+    orchestrator.handleDaemonEvent(event).catch((error) => {
+      console.error("[BrowserOrchestrator] Failed to handle daemon event:", error);
+    });
+  });
+
   return {
     async getBrowserSnapshot(sessionId: string) {
       const snapshot = await orchestrator.getSnapshot(sessionId);
@@ -140,11 +151,11 @@ export const createBrowserService = async (
     },
 
     startReconciler() {
-      orchestrator.startReconciler();
+      eventSubscriber.start();
     },
 
     stopReconciler() {
-      orchestrator.stopReconciler();
+      eventSubscriber.stop();
     },
   };
 };

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defineChannel, defineSchema } from "@lab/multiplayer-sdk";
+import { defineChannel, defineSchema } from "./schema";
 
 const ReviewableFileSchema = z.object({
   path: z.string(),
@@ -173,14 +173,7 @@ export const schema = defineSchema({
       path: "session/:uuid/browser-state",
       snapshot: z.object({
         desiredState: z.enum(["running", "stopped"]),
-        currentState: z.enum([
-          "pending",
-          "stopped",
-          "starting",
-          "running",
-          "stopping",
-          "error",
-        ]),
+        currentState: z.enum(["pending", "stopped", "starting", "running", "stopping", "error"]),
         streamPort: z.number().optional(),
         errorMessage: z.string().optional(),
       }),
@@ -264,5 +257,5 @@ export const schema = defineSchema({
   ]),
 });
 
-export type Schema = typeof schema;
+export type AppSchema = typeof schema;
 export type ClientMessage = z.infer<typeof schema.clientMessages>;

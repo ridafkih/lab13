@@ -37,12 +37,13 @@ export {
   type DaemonController,
   type Reconciler,
   type ReconcilerConfig,
-  type ReconcilerLoop,
   type Orchestrator,
   type OrchestratorConfig,
   type StateChangeHandler,
   type ErrorHandler,
   type SessionManager,
+  type DaemonEvent,
+  type DaemonEventType,
 } from "./types/orchestrator";
 
 export {
@@ -56,7 +57,7 @@ export { createInMemoryStateStore } from "./clients/memory-state-store";
 
 export { createReconciler } from "./utils/reconciler";
 
-export { createReconcilerLoop } from "./utils/reconciler-loop";
+export { createEventDrivenReconciler, type EventDrivenReconciler } from "./utils/event-driven-reconciler";
 
 export { createSessionManager } from "./utils/session-manager";
 

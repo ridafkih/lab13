@@ -1,5 +1,18 @@
 import type { BrowserSessionState, CurrentState, DesiredState, DaemonStatus, SessionSnapshot } from "./session";
 
+export type DaemonEventType = "daemon:started" | "daemon:ready" | "daemon:stopped" | "daemon:error";
+
+export interface DaemonEvent {
+  type: DaemonEventType;
+  sessionId: string;
+  timestamp: number;
+  data?: {
+    port?: number;
+    exitCode?: number;
+    error?: string;
+  };
+}
+
 export interface StateStoreOptions {
   streamPort?: number | null;
   errorMessage?: string | null;
@@ -46,11 +59,6 @@ export interface Reconciler {
   reconcileAll(): Promise<void>;
 }
 
-export interface ReconcilerLoop {
-  start(): void;
-  stop(): void;
-}
-
 export interface OrchestratorConfig {
   maxRetries: number;
   reconcileIntervalMs: number;
@@ -73,6 +81,7 @@ export interface Orchestrator {
   stopReconciler(): void;
   onStateChange(handler: StateChangeHandler): void;
   onError(handler: ErrorHandler): void;
+  handleDaemonEvent(event: DaemonEvent): Promise<void>;
 }
 
 export interface SessionManager {

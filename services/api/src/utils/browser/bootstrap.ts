@@ -66,6 +66,7 @@ export const bootstrapBrowserService = async (
   const service = await createBrowserService(
     {
       browserWsHost: config.browserWsHost,
+      browserDaemonUrl: baseUrl,
       cleanupDelayMs: config.cleanupDelayMs,
       reconcileIntervalMs: config.reconcileIntervalMs,
       maxRetries: config.maxRetries,

@@ -29,4 +29,5 @@ export interface DaemonManager {
   getAllSessions(): DaemonSession[];
   isRunning(sessionId: string): boolean;
   isReady(sessionId: string): boolean;
+  onEvent(handler: import("./events").DaemonEventHandler): () => void;
 }

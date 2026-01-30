@@ -1,36 +1,17 @@
 import type { Server } from "bun";
-import type { WireServerMessage } from "@lab/multiplayer-sdk";
+import type {
+  Schema,
+  ChannelName,
+  PathOf,
+  HasParams,
+  DataOf,
+  WireServerMessage,
+} from "@lab/multiplayer-sdk";
 import { resolvePath, hasParams } from "@lab/multiplayer-sdk";
-import type { z } from "zod";
-
-type AnyChannelConfig = {
-  path: string;
-  snapshot: z.ZodType;
-  default: unknown;
-  delta?: z.ZodType;
-  event?: z.ZodType;
-};
-
-type AnySchema = {
-  channels: Record<string, AnyChannelConfig>;
-  clientMessages: z.ZodType;
-};
-
-type ChannelName<S extends AnySchema> = keyof S["channels"] & string;
-
-type PathOf<C> = C extends { path: infer P extends string } ? P : string;
-
-type HasParams<Path extends string> = Path extends `${string}:${string}` ? true : false;
 
 type ParamsArg<Path extends string> = HasParams<Path> extends true ? { uuid: string } : undefined;
 
-type DataOf<C, Key extends "snapshot" | "delta" | "event"> = C extends { [K in Key]?: infer T }
-  ? T extends z.ZodType
-    ? z.infer<T>
-    : never
-  : never;
-
-export interface Publisher<S extends AnySchema> {
+export interface Publisher<S extends Schema> {
   publishSnapshot<K extends ChannelName<S>>(
     channelName: K,
     ...args: ParamsArg<PathOf<S["channels"][K]>> extends undefined
@@ -78,7 +59,7 @@ function extractArgs(
   return { params: undefined, data: args[0] };
 }
 
-export function createPublisher<S extends AnySchema>(
+export function createPublisher<S extends Schema>(
   schema: S,
   getServer: () => Server<unknown>,
 ): Publisher<S> {

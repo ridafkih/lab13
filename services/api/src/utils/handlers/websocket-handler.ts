@@ -1,4 +1,4 @@
-import { schema } from "@lab/multiplayer-channels";
+import { schema, type AppSchema } from "@lab/multiplayer-sdk";
 import {
   createWebSocketHandler,
   type SchemaHandlers,
@@ -6,7 +6,7 @@ import {
 } from "@lab/multiplayer-server";
 import { publisher } from "../../clients/publisher";
 import type { BrowserService } from "../browser/browser-service";
-import type { Auth, Schema } from "../../types/websocket";
+import type { Auth } from "../../types/websocket";
 import {
   loadProjects,
   loadSessions,
@@ -19,7 +19,7 @@ export { type Auth } from "../../types/websocket";
 export function createWebSocketHandlers(browserService: BrowserService) {
   const sessionSubscribers = new Map<string, Set<object>>();
 
-  const handlers: SchemaHandlers<Schema, Auth> = {
+  const handlers: SchemaHandlers<AppSchema, Auth> = {
     projects: {
       getSnapshot: loadProjects,
     },
@@ -94,7 +94,7 @@ export function createWebSocketHandlers(browserService: BrowserService) {
     },
   };
 
-  const options: HandlerOptions<Schema, Auth> = {
+  const options: HandlerOptions<AppSchema, Auth> = {
     authenticate: async (token) => ({ userId: token ?? "anonymous" }),
     onMessage: async (context, message) => {
       if (message.type === "send_message") {
