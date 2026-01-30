@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
-import type { ToolContext } from "./types";
+import type { ToolContext } from "../types/tool";
 
 export function execContainer(server: McpServer, { docker }: ToolContext) {
   server.registerTool(

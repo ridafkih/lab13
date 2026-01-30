@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { ToolContext } from "./types";
+import type { ToolContext } from "../types/tool";
 
 export function listContainers(server: McpServer, { docker }: ToolContext) {
   server.registerTool(

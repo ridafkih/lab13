@@ -1,13 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { DockerClient } from "@lab/sandbox-docker";
-import {
-  makeRegisterTool,
-  listContainers,
-  execContainer,
-  getContainerLogs,
-  inspectContainer,
-} from "./tools";
+import { config } from "./config/environment";
+import { makeRegisterTool } from "./tools/register";
+import { listContainers } from "./tools/list-containers";
+import { execContainer } from "./tools/exec-container";
+import { getContainerLogs } from "./tools/get-container-logs";
+import { inspectContainer } from "./tools/inspect-container";
 
 const docker = new DockerClient();
 
@@ -27,14 +26,9 @@ const transport = new WebStandardStreamableHTTPServerTransport();
 
 await server.connect(transport);
 
-const port = process.env.MCP_PORT;
-if (!port) {
-  throw new Error("MCP_PORT environment variable is required");
-}
-
 Bun.serve({
-  port: parseInt(port, 10),
+  port: config.port,
   fetch: (request) => transport.handleRequest(request),
 });
 
-console.log(`MCP server running on http://localhost:${port}`);
+console.log(`MCP server running on http://localhost:${config.port}`);
