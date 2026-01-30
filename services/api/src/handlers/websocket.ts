@@ -185,13 +185,7 @@ export const createWebSocketHandlers = (browserService: BrowserService) => {
       getSnapshot: async ({ params }) => {
         const frame = browserService.getCachedFrame(params.uuid);
         if (!frame) return { lastFrame: null, timestamp: null };
-        try {
-          const parsed = JSON.parse(frame).data;
-          return { lastFrame: parsed, timestamp: Date.now() };
-        } catch (error) {
-          console.error("[sessionBrowserFrames] Failed to parse cached frame:", error);
-          return { lastFrame: null, timestamp: null };
-        }
+        return { lastFrame: frame, timestamp: Date.now() };
       },
     },
     sessionBrowserInput: {
