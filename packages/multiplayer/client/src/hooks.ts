@@ -115,7 +115,11 @@ export function createHooks<
       return channel.default;
     }
 
-    type EventOf<C> = C extends { event: infer E } ? (E extends z.ZodType ? z.infer<E> : never) : never;
+    type EventOf<C> = C extends { event: infer E }
+      ? E extends z.ZodType
+        ? z.infer<E>
+        : never
+      : never;
 
     function useChannelEvent<K extends ChannelName<Channels>>(
       channelName: K,

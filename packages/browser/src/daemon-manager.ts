@@ -14,7 +14,7 @@ const PROFILE_DIR = process.env.AGENT_BROWSER_PROFILE_DIR;
 const activeSessions = new Map<string, { port: number; ready: boolean }>();
 const daemonProcesses = new Map<string, Subprocess>();
 
-const BASE_STREAM_PORT = parseInt(process.env.AGENT_BROWSER_STREAM_PORT ?? "9223", 10);
+const BASE_STREAM_PORT = parseInt(process.env.AGENT_BROWSER_STREAM_PORT ?? "9224", 10);
 let nextStreamPort = BASE_STREAM_PORT + 1;
 
 function initializeFromExistingDaemons(): void {

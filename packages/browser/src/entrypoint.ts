@@ -10,7 +10,7 @@ import {
 } from "./daemon-manager";
 
 const API_PORT = parseInt(process.env.BROWSER_API_PORT ?? "80", 10);
-const DEFAULT_STREAM_PORT = parseInt(process.env.AGENT_BROWSER_STREAM_PORT ?? "9223", 10);
+const DEFAULT_STREAM_PORT = parseInt(process.env.AGENT_BROWSER_STREAM_PORT ?? "9224", 10);
 const SOCKET_DIR = getSocketDir();
 
 console.log(`Socket directory: ${SOCKET_DIR}`);

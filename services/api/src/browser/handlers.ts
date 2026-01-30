@@ -23,8 +23,14 @@ const daemonController = createHttpDaemonController({ baseUrl: BROWSER_API_URL }
 
 const frameReceivers = new Map<string, FrameReceiver>();
 
-const connectFrameReceiver = (sessionId: string, port: number, orchestrator: Orchestrator) => {
+const connectFrameReceiver = async (
+  sessionId: string,
+  port: number,
+  orchestrator: Orchestrator,
+) => {
   if (frameReceivers.has(sessionId)) return;
+
+  await daemonController.launch(sessionId);
 
   const receiver = createFrameReceiver(
     sessionId,
@@ -89,7 +95,9 @@ const createBrowserOrchestrator = async (): Promise<Orchestrator> => {
     );
 
     if (state.currentState === "running" && state.streamPort) {
-      connectFrameReceiver(sessionId, state.streamPort, orchestrator);
+      connectFrameReceiver(sessionId, state.streamPort, orchestrator).catch((error) =>
+        console.error("[FrameReceiver] Failed to connect:", error),
+      );
     } else {
       disconnectFrameReceiver(sessionId);
     }

@@ -1,5 +1,6 @@
 import { db } from "@lab/database/client";
 import { browserSessions } from "@lab/database/schema/browser-sessions";
+import { sessions } from "@lab/database/schema/sessions";
 import { eq } from "drizzle-orm";
 import {
   type StateStore,
@@ -73,6 +74,16 @@ export const createDbStateStore = (): StateStore => {
     sessionId: string,
     desiredState: DesiredState,
   ): Promise<BrowserSessionState> => {
+    const [parentSession] = await db
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(eq(sessions.id, sessionId))
+      .limit(1);
+
+    if (!parentSession) {
+      throw sessionNotFound(sessionId);
+    }
+
     const [session] = await db
       .insert(browserSessions)
       .values({

@@ -51,6 +51,6 @@ export const PortRange = z.object({
 export type PortRange = z.infer<typeof PortRange>;
 
 export const DEFAULT_PORT_RANGE: PortRange = {
-  start: 9223,
+  start: 9224,
   end: 9323,
 };
