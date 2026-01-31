@@ -109,7 +109,7 @@ export function createHooks<S extends Schema>(schema: S) {
         });
 
         return unsubscribe;
-      }, [resolvedPath, setState, shouldSkip]);
+      }, [channel, connection, resolvedPath, setState, shouldSkip]);
 
       if (shouldSkip || state.status !== "connected") return channel.default;
       return parseSnapshot(channel, state.data);

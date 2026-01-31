@@ -221,7 +221,8 @@ export function useAgent(labSessionId: string): UseAgentResult {
   }, [labSessionId, opencodeClient]);
 
   useEffect(() => {
-    const globalClient = createGlobalEventClient();
+    if (!opencodeClient || !opencodeSessionId) return;
+
     const abortController = new AbortController();
 
     const handleMessageUpdated = (info: Message) => {
@@ -266,19 +267,41 @@ export function useAgent(labSessionId: string): UseAgentResult {
       }
     };
 
-    const subscribe = async () => {
+    const instanceId = Math.random().toString(36).slice(2, 6);
+    console.log(`[${instanceId}] effect started`);
+
+    const subscribe = async (): Promise<void> => {
+      console.log(`[${instanceId}] subscribe called, aborted: ${abortController.signal.aborted}`);
+      if (abortController.signal.aborted) return;
+
       try {
-        const { stream } = await globalClient.event.subscribe({
+        console.log(`[${instanceId}] calling event.subscribe...`);
+        const { stream } = await opencodeClient.event.subscribe({
           signal: abortController.signal,
         });
+        console.log(`[${instanceId}] got stream, aborted: ${abortController.signal.aborted}`);
 
         for await (const event of stream) {
-          if (abortController.signal.aborted) break;
+          if (abortController.signal.aborted) {
+            console.log(`[${instanceId}] aborted during iteration`);
+            return;
+          }
           processEvent(event);
         }
+
+        console.log(
+          `[${instanceId}] stream ended cleanly, aborted: ${abortController.signal.aborted}`,
+        );
+        if (!abortController.signal.aborted) {
+          setTimeout(() => subscribe(), 1000);
+        }
       } catch (error) {
+        console.log(
+          `[${instanceId}] caught error, aborted: ${abortController.signal.aborted}`,
+          error,
+        );
         if (abortController.signal.aborted) return;
-        console.error("Event stream error:", error);
+        setTimeout(() => subscribe(), 1000);
       }
     };
 
@@ -287,7 +310,7 @@ export function useAgent(labSessionId: string): UseAgentResult {
     return () => {
       abortController.abort();
     };
-  }, []);
+  }, [opencodeClient, opencodeSessionId]);
 
   const sendMessage = useCallback(
     async ({ content, modelId }: SendMessageOptions) => {
