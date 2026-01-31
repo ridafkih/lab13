@@ -284,6 +284,13 @@ function ChatTabContent({ messages }: { messages: MessageState[] }) {
   const { data: modelGroups } = useModels();
   const { state, actions } = useChat();
 
+  useEffect(() => {
+    if (modelGroups && !state.modelId) {
+      const firstModel = modelGroups[0]?.models[0];
+      if (firstModel) actions.setModelId(firstModel.value);
+    }
+  }, [modelGroups, state.modelId, actions]);
+
   return (
     <Chat.MessageList>
       <Chat.Messages>
@@ -390,7 +397,7 @@ function ConversationView({
   const session = sessionData?.session;
 
   return (
-    <Chat.Provider key={sessionId} defaultModelId={defaultModel} onSubmit={sendMessage}>
+    <Chat.Provider key={sessionId} onSubmit={sendMessage}>
       <Chat.Frame>
         <Chat.Header>
           <StatusIcon status={session?.status ?? "idle"} />
