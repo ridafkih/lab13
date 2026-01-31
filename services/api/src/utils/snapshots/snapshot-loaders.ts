@@ -9,6 +9,8 @@ import {
   findPortsByContainerId,
 } from "../repositories/container.repository";
 import { opencode } from "../../clients/opencode";
+import type { BrowserService } from "../browser/browser-service";
+import type { AppSchema } from "@lab/multiplayer-sdk";
 
 export async function loadProjects() {
   return findProjectSummaries();
@@ -62,4 +64,33 @@ export async function loadSessionChangedFiles(sessionId: string) {
   } catch {
     return [];
   }
+}
+
+type ChannelName = keyof AppSchema["channels"];
+type SnapshotLoader = (session: string | null) => Promise<unknown>;
+
+export function createSnapshotLoaders(
+  browserService: BrowserService,
+): Record<ChannelName, SnapshotLoader> {
+  return {
+    projects: async () => loadProjects(),
+    sessions: async () => loadSessions(),
+    sessionMetadata: async () => ({ title: "", participantCount: 0 }),
+    sessionContainers: async (session) => (session ? loadSessionContainers(session) : null),
+    sessionTyping: async () => [],
+    sessionPromptEngineers: async () => [],
+    sessionChangedFiles: async (session) => (session ? loadSessionChangedFiles(session) : null),
+    sessionBranches: async () => [],
+    sessionLinks: async () => [],
+    sessionLogs: async () => [],
+    sessionMessages: async () => [],
+    sessionBrowserState: async (session) =>
+      session ? browserService.getBrowserSnapshot(session) : null,
+    sessionBrowserFrames: async (session) => {
+      if (!session) return null;
+      const frame = browserService.getCachedFrame(session);
+      return { lastFrame: frame ?? null, timestamp: frame ? Date.now() : null };
+    },
+    sessionBrowserInput: async () => ({}),
+  };
 }

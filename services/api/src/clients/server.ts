@@ -2,6 +2,7 @@ import { type WebSocketData } from "@lab/multiplayer-server";
 import { type BrowserSessionState } from "@lab/browser-protocol";
 import { createWebSocketHandlers, type Auth } from "../utils/handlers/websocket-handler";
 import { createOpenCodeProxyHandler } from "../utils/handlers/opencode-handler";
+import { createChannelRestHandler } from "../utils/handlers/channel-rest-handler";
 import { bootstrapBrowserService, shutdownBrowserService } from "../utils/browser/bootstrap";
 import { initializeSessionContainers } from "../utils/docker/containers";
 import { isHttpMethod, isRouteModule, type RouteContext } from "../utils/handlers/route-handler";
@@ -62,6 +63,7 @@ const bootstrap = async () => {
   };
 
   const { websocketHandler, upgrade } = createWebSocketHandlers(browserService);
+  const handleChannelRequest = createChannelRestHandler(browserService);
 
   const server = Bun.serve<WebSocketData<Auth>>({
     port: config.apiPort,
@@ -80,6 +82,11 @@ const bootstrap = async () => {
 
       if (url.pathname.startsWith("/opencode/")) {
         return handleOpenCodeProxy(request, url);
+      }
+
+      const [, channel] = url.pathname.match(/^\/channels\/([^/]+)\/snapshot$/) ?? [];
+      if (channel) {
+        return withCors(await handleChannelRequest(channel, url.searchParams));
       }
 
       const match = router.match(request);
