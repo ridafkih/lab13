@@ -14,12 +14,15 @@
     "@opencode-ai/sdk": "^1.1.41",
     "@pierre/diffs": "^1.0.9",
     "@streamdown/code": "^1.0.1",
+    "clsx": "^2.1.1",
     "jotai": "^2.12.3",
     "lucide-react": "^0.563.0",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "streamdown": "^2.1.0",
+    "tailwind-merge": "^3.4.0",
+    "tailwind-variants": "^3.2.2",
     "zod": "^3.25.46"
   },
   "devDependencies": {
