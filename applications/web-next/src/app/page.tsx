@@ -43,7 +43,7 @@ import {
 import { defaultModel } from "@/placeholder/models";
 import { Trash2 } from "lucide-react";
 import { useMultiplayer } from "@/lib/multiplayer";
-import { useAgent, type MessageState } from "@/lib/use-agent";
+import { useAgent, prefetchSessionMessages, type MessageState } from "@/lib/use-agent";
 
 function SessionItem({ session }: { session: Session }) {
   const { selected, select } = useSplitPane();
@@ -55,8 +55,17 @@ function SessionItem({ session }: { session: Session }) {
   const isLoading = session.status === "creating" || hasStartingContainer;
   const displayStatus = isLoading ? "loading" : session.status;
 
+  const handleMouseDown = () => {
+    if (isTemp) return;
+    prefetchSessionMessages(session.id);
+  };
+
   return (
-    <ProjectNavigator.Item selected={selected === session.id} onClick={() => select(session.id)}>
+    <ProjectNavigator.Item
+      selected={selected === session.id}
+      onClick={() => select(session.id)}
+      onMouseDown={handleMouseDown}
+    >
       <StatusIcon status={displayStatus} />
       {isTemp ? <ProjectNavigator.ItemSkeletonBlock /> : <Hash>{session.id.slice(0, 6)}</Hash>}
       {session.title ? (
