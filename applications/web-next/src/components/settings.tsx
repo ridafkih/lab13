@@ -110,7 +110,7 @@ function GitHubTab() {
           type="email"
           value={authorEmail}
           onChange={(e) => setAuthorEmail(e.target.value)}
-          placeholder="you@example.com"
+          placeholder="my-agent@example.com"
         />
       </SettingsFormField>
 
@@ -137,33 +137,9 @@ const aiProviderOptions = [
   { value: "google", label: "Google" },
 ];
 
-const modelOptions: Record<string, { value: string; label: string }[]> = {
-  anthropic: [
-    { value: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
-    { value: "claude-opus-4-20250514", label: "Claude Opus 4" },
-    { value: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku" },
-  ],
-  openai: [
-    { value: "gpt-4o", label: "GPT-4o" },
-    { value: "gpt-4-turbo", label: "GPT-4 Turbo" },
-    { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
-  ],
-  google: [
-    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-    { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
-  ],
-};
-
 function ProvidersTab() {
   const [provider, setProvider] = useState("anthropic");
   const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState("claude-sonnet-4-20250514");
-
-  const handleProviderChange = (newProvider: string) => {
-    setProvider(newProvider);
-    const defaultModel = modelOptions[newProvider]?.[0]?.value ?? "";
-    setModel(defaultModel);
-  };
 
   const handleSave = () => {};
 
@@ -171,11 +147,7 @@ function ProvidersTab() {
     <SettingsPanel>
       <SettingsFormField>
         <FormInput.Label>Provider</FormInput.Label>
-        <FormInput.Select
-          options={aiProviderOptions}
-          value={provider}
-          onChange={handleProviderChange}
-        />
+        <FormInput.Select options={aiProviderOptions} value={provider} onChange={setProvider} />
       </SettingsFormField>
 
       <SettingsFormField>
@@ -184,15 +156,6 @@ function ProvidersTab() {
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           placeholder="sk-xxxxxxxxxxxx"
-        />
-      </SettingsFormField>
-
-      <SettingsFormField>
-        <FormInput.Label>Default Model</FormInput.Label>
-        <FormInput.Select
-          options={modelOptions[provider] ?? []}
-          value={model}
-          onChange={setModel}
         />
       </SettingsFormField>
 
