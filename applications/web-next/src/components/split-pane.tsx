@@ -2,15 +2,15 @@
 
 import { createContext, use, useState, type ReactNode } from "react";
 
-type SplitPaneContextValue<T = string> = {
-  selected: T | null;
-  select: (id: T | null) => void;
+type SplitPaneContextValue = {
+  selected: string | null;
+  select: (id: string | null) => void;
 };
 
 const SplitPaneContext = createContext<SplitPaneContextValue | null>(null);
 
-function useSplitPane<T = string>() {
-  const context = use(SplitPaneContext) as SplitPaneContextValue<T> | null;
+function useSplitPane() {
+  const context = use(SplitPaneContext);
   if (!context) {
     throw new Error("SplitPane components must be used within SplitPane");
   }

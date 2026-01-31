@@ -42,7 +42,7 @@ export function useCreateSession() {
     const tempSession: Session = {
       id: tempId,
       projectId,
-      title: title ?? "New Session",
+      title: null,
       opencodeSessionId: null,
       status: "creating",
       createdAt: new Date().toISOString(),
@@ -60,7 +60,9 @@ export function useCreateSession() {
       mutate(
         cacheKey,
         (current: Session[] = []) =>
-          current.map((session) => (session.id === tempId ? realSession : session)),
+          current.map((session) =>
+            session.id === tempId ? { ...session, ...realSession } : session,
+          ),
         false,
       );
 

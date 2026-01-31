@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSWRConfig } from "swr";
 import { AppView, useAppView } from "@/components/app-view";
 import { Nav } from "@/components/nav";
 import { Chat } from "@/components/chat";
@@ -22,13 +23,7 @@ import {
   mockFileTreeContents,
   mockFileContents,
 } from "@/placeholder/data";
-import {
-  useProjects,
-  useSessions,
-  useSession,
-  useCreateSession,
-  useDeleteSession,
-} from "@/lib/hooks";
+import { useProjects, useSessions, useCreateSession, useDeleteSession } from "@/lib/hooks";
 import type { Project, Session } from "@lab/client";
 import { mockPartsMessages } from "@/placeholder/parts";
 import {
@@ -48,21 +43,19 @@ function SessionItem({ session }: { session: Session }) {
     (container) => container.status === "starting",
   );
 
-  if (session.status === "creating" || hasStartingContainer) {
-    return (
-      <ProjectNavigator.ItemSkeleton>
-        {isTemp ? <ProjectNavigator.ItemSkeletonBlock /> : <Hash>{session.id.slice(0, 6)}</Hash>}
-        <ProjectNavigator.ItemSkeletonBlock />
-        <ProjectNavigator.ItemSkeletonBlock />
-      </ProjectNavigator.ItemSkeleton>
-    );
-  }
+  const isLoading = session.status === "creating" || hasStartingContainer;
+  const displayStatus = isLoading ? "loading" : session.status;
 
   return (
     <ProjectNavigator.Item selected={selected === session.id} onClick={() => select(session.id)}>
-      <StatusIcon status={session.status as "running" | "idle" | "complete"} />
-      <Hash>{session.id.slice(0, 6)}</Hash>
-      <ProjectNavigator.ItemTitle>Session</ProjectNavigator.ItemTitle>
+      <StatusIcon status={displayStatus} />
+      {isTemp ? <ProjectNavigator.ItemSkeletonBlock /> : <Hash>{session.id.slice(0, 6)}</Hash>}
+      {session.title ? (
+        <ProjectNavigator.ItemTitle>{session.title}</ProjectNavigator.ItemTitle>
+      ) : (
+        <ProjectNavigator.ItemEmptyTitle>Unnamed Session</ProjectNavigator.ItemEmptyTitle>
+      )}
+      <ProjectNavigator.ItemDescription />
       <Avatar />
     </ProjectNavigator.Item>
   );
@@ -114,24 +107,31 @@ function ProjectNavigatorView({ children }: { children?: React.ReactNode }) {
   );
 }
 
+function isCachedArray<T>(value: unknown): value is { data: T[] } {
+  return (
+    typeof value === "object" && value !== null && "data" in value && Array.isArray(value.data)
+  );
+}
+
 function useSessionData(sessionId: string | null) {
-  const { data: session, isLoading: sessionLoading } = useSession(sessionId);
-  const { data: projects, isLoading: projectsLoading } = useProjects();
+  const { data: projects } = useProjects();
+  const { cache } = useSWRConfig();
 
-  if (!sessionId || sessionLoading || projectsLoading) {
-    return { isLoading: sessionLoading || projectsLoading, data: null };
+  if (!sessionId || !projects) {
+    return { data: null };
   }
 
-  if (!session || !projects) {
-    return { isLoading: false, data: null };
+  for (const project of projects) {
+    const cached = cache.get(`sessions-${project.id}`);
+    if (!isCachedArray<Session>(cached)) continue;
+
+    const session = cached.data.find((existing) => existing.id === sessionId);
+    if (session) {
+      return { data: { project, session } };
+    }
   }
 
-  const project = projects.find((proj) => proj.id === session.projectId);
-  if (!project) {
-    return { isLoading: false, data: null };
-  }
-
-  return { isLoading: false, data: { project, session } };
+  return { data: null };
 }
 
 function useMockFileBrowser(sessionId: string | null) {
@@ -334,10 +334,15 @@ function StreamTabContent() {
   );
 }
 
-function ConversationView({ sessionId }: { sessionId: string | null }) {
-  const { isLoading, data: sessionData } = useSessionData(sessionId);
-  const isCreating = sessionId?.startsWith("temp-");
+type SessionData = { project: Project; session: Session } | null;
 
+function ConversationView({
+  sessionId,
+  sessionData,
+}: {
+  sessionId: string | null;
+  sessionData: SessionData;
+}) {
   if (!sessionId) {
     return (
       <div className="flex items-center justify-center h-full text-text-muted">
@@ -346,31 +351,18 @@ function ConversationView({ sessionId }: { sessionId: string | null }) {
     );
   }
 
-  if (isLoading || isCreating) {
-    return (
-      <div className="flex items-center justify-center h-full text-text-muted">Loading...</div>
-    );
-  }
-
-  if (!sessionData) {
-    return (
-      <div className="flex items-center justify-center h-full text-text-muted">
-        Session not found
-      </div>
-    );
-  }
-
-  const { project, session } = sessionData;
+  const project = sessionData?.project;
+  const session = sessionData?.session;
 
   return (
     <Chat.Provider key={sessionId}>
       <Chat.Frame>
         <Chat.Header>
-          <StatusIcon status={session.status as "running" | "idle" | "complete"} />
+          <StatusIcon status={(session?.status as "running" | "idle" | "complete") ?? "idle"} />
           <Chat.HeaderBreadcrumb>
-            <Chat.HeaderProject>{project.name}</Chat.HeaderProject>
+            <Chat.HeaderProject>{project?.name}</Chat.HeaderProject>
             <Chat.HeaderDivider />
-            <Chat.HeaderTitle>Session {session.id.slice(0, 6)}</Chat.HeaderTitle>
+            <Chat.HeaderTitle>Session {sessionId.slice(0, 6)}</Chat.HeaderTitle>
           </Chat.HeaderBreadcrumb>
         </Chat.Header>
         <Chat.Tabs>
@@ -519,15 +511,13 @@ function AppViewContent({ selected }: { selected: string | null }) {
   return (
     <div className="flex h-full">
       <div className="flex-1 min-w-0 border-r border-border">
-        <ConversationView sessionId={selected} />
+        <ConversationView sessionId={selected} sessionData={sessionData ?? null} />
       </div>
-      <div className="min-w-64 shrink-0">
-        {sessionData ? (
+      {sessionData && (
+        <div className="min-w-64 shrink-0">
           <SessionInfoView session={sessionData.session} onDelete={handleDelete} />
-        ) : (
-          <SessionInfoPane.Root />
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

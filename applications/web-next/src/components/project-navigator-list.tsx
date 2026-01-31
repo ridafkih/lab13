@@ -123,15 +123,19 @@ function ProjectNavigatorItemSkeleton({ children }: { children?: ReactNode }) {
 }
 
 function ProjectNavigatorItemSkeletonBlock() {
-  return <div className="h-3 w-12 rounded bg-bg-hover animate-pulse" />;
+  return <div className="h-3 w-full max-w-10 rounded bg-bg-hover animate-pulse" />;
 }
 
 function ProjectNavigatorItemTitle({ children }: { children: ReactNode }) {
   return <span className="text-text truncate">{children}</span>;
 }
 
-function ProjectNavigatorItemDescription({ children }: { children: ReactNode }) {
-  return <span className="text-text-muted truncate max-w-[50%] ml-auto">{children}</span>;
+function ProjectNavigatorItemDescription({ children }: { children?: ReactNode }) {
+  return <span className="text-text-muted truncate ml-auto max-w-1/2">{children}</span>;
+}
+
+function ProjectNavigatorItemEmptyTitle({ children }: { children: ReactNode }) {
+  return <span className="text-text-muted italic truncate">{children}</span>;
 }
 
 const ProjectNavigator = {
@@ -141,6 +145,7 @@ const ProjectNavigator = {
   HeaderCount: ProjectNavigatorHeaderCount,
   Item: ProjectNavigatorItem,
   ItemTitle: ProjectNavigatorItemTitle,
+  ItemEmptyTitle: ProjectNavigatorItemEmptyTitle,
   ItemDescription: ProjectNavigatorItemDescription,
   ItemSkeleton: ProjectNavigatorItemSkeleton,
   ItemSkeletonBlock: ProjectNavigatorItemSkeletonBlock,

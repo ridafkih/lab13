@@ -5,6 +5,7 @@ export type {
   Container,
   CreateContainerInput,
   Session,
+  SessionStatus,
   SessionContainer,
   Model,
 } from "./types";

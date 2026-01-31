@@ -33,12 +33,14 @@ export interface SessionContainer {
   urls: string[];
 }
 
+export type SessionStatus = "creating" | "loading" | "running" | "idle" | "complete";
+
 export interface Session {
   id: string;
   projectId: string;
-  title: string;
+  title: string | null;
   opencodeSessionId: string | null;
-  status: string;
+  status: SessionStatus;
   containers?: SessionContainer[];
   createdAt: string;
   updatedAt: string;
