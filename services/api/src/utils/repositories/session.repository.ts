@@ -118,6 +118,19 @@ export async function countPooledSessions(projectId: string): Promise<number> {
   return result?.count ?? 0;
 }
 
+export async function findPooledSessions(projectId: string, limit?: number): Promise<Session[]> {
+  const query = db
+    .select()
+    .from(sessions)
+    .where(and(eq(sessions.projectId, projectId), eq(sessions.status, "pooled")));
+
+  if (limit !== undefined) {
+    return query.limit(limit);
+  }
+
+  return query;
+}
+
 export async function createPooledSession(projectId: string): Promise<Session> {
   const [session] = await db.insert(sessions).values({ projectId, status: "pooled" }).returning();
   return session;

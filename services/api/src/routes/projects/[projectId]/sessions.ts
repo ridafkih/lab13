@@ -8,7 +8,7 @@ import {
   findSessionsByProjectId,
   updateSessionTitle,
 } from "../../../utils/repositories/session.repository";
-import { claimPooledSession, replenishPool } from "../../../utils/pool";
+import { claimPooledSession, reconcilePool } from "../../../utils/pool";
 import { publisher } from "../../../clients/publisher";
 import type { RouteHandler } from "../../../utils/handlers/route-handler";
 
@@ -102,8 +102,8 @@ const POST: RouteHandler = async (request, params, context) => {
     console.error(`Background session initialization failed for ${session.id}:`, error);
   });
 
-  replenishPool(projectId).catch((error) => {
-    console.error(`Failed to replenish pool for project ${projectId}:`, error);
+  reconcilePool(projectId).catch((error) => {
+    console.error(`Failed to reconcile pool for project ${projectId}:`, error);
   });
 
   return Response.json(

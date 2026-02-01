@@ -3,7 +3,9 @@ import {
   claimPooledSession as claimFromDb,
   countPooledSessions,
   createPooledSession as createInDb,
+  findPooledSessions,
 } from "../repositories/session.repository";
+import { cleanupSession } from "../session/session-cleanup";
 import { findAllProjects } from "../repositories/project.repository";
 import {
   findContainersByProjectId,
@@ -19,7 +21,7 @@ interface PoolStats {
 }
 
 let browserServiceRef: BrowserService | null = null;
-const replenishLocks = new Map<string, Promise<void>>();
+const reconcileLocks = new Map<string, Promise<void>>();
 
 export function setPoolBrowserService(browserService: BrowserService): void {
   browserServiceRef = browserService;
@@ -38,20 +40,15 @@ export async function getPoolStats(projectId: string): Promise<PoolStats> {
 }
 
 export async function claimPooledSession(projectId: string): Promise<Session | null> {
-  const targetSize = getTargetPoolSize();
-  console.log(`Pool: Attempting to claim for project ${projectId}, pool size: ${targetSize}`);
-
-  if (targetSize === 0) {
-    console.log("Pool: Pool size is 0, skipping claim");
+  if (getTargetPoolSize() === 0) {
     return null;
   }
 
   const session = await claimFromDb(projectId);
-  console.log(`Pool: Claim result for project ${projectId}:`, session?.id ?? "null");
 
   if (session) {
-    replenishPool(projectId).catch((error) =>
-      console.error(`Failed to replenish pool for project ${projectId}:`, error),
+    reconcilePool(projectId).catch((error) =>
+      console.error(`Failed to reconcile pool for project ${projectId}:`, error),
     );
   }
 
@@ -90,61 +87,69 @@ export async function createPooledSession(projectId: string): Promise<Session | 
   }
 }
 
-async function doReplenish(projectId: string): Promise<void> {
+async function doReconcile(projectId: string): Promise<void> {
   const targetSize = getTargetPoolSize();
-  if (targetSize === 0) {
-    return;
-  }
 
   while (true) {
     const currentCount = await countPooledSessions(projectId);
-    if (currentCount >= targetSize) {
+
+    if (currentCount === targetSize) {
       break;
     }
 
-    console.log(
-      `Pool: Replenishing for project ${projectId} (current: ${currentCount}, target: ${targetSize})`,
-    );
-    await createPooledSession(projectId);
+    if (currentCount < targetSize) {
+      console.log(
+        `Pool: Adding session for project ${projectId} (current: ${currentCount}, target: ${targetSize})`,
+      );
+      await createPooledSession(projectId);
+    } else {
+      const excess = currentCount - targetSize;
+      console.log(
+        `Pool: Removing ${excess} session(s) for project ${projectId} (current: ${currentCount}, target: ${targetSize})`,
+      );
+
+      const sessionsToRemove = await findPooledSessions(projectId, excess);
+      for (const session of sessionsToRemove) {
+        if (!browserServiceRef) {
+          console.warn("Pool manager: Browser service not set, cannot remove pooled session");
+          break;
+        }
+        await cleanupSession(session.id, browserServiceRef);
+        console.log(`Pool: Removed pooled session ${session.id}`);
+      }
+    }
   }
 }
 
-export async function replenishPool(projectId: string): Promise<void> {
-  const existing = replenishLocks.get(projectId);
+export async function reconcilePool(projectId: string): Promise<void> {
+  const existing = reconcileLocks.get(projectId);
   if (existing) {
     return existing;
   }
 
-  const promise = doReplenish(projectId).finally(() => {
-    replenishLocks.delete(projectId);
+  const promise = doReconcile(projectId).finally(() => {
+    reconcileLocks.delete(projectId);
   });
 
-  replenishLocks.set(projectId, promise);
+  reconcileLocks.set(projectId, promise);
   return promise;
 }
 
-export async function replenishAllPools(): Promise<void> {
-  if (getTargetPoolSize() === 0) {
-    return;
-  }
-
+export async function reconcileAllPools(): Promise<void> {
   const projects = await findAllProjects();
 
   for (const project of projects) {
     try {
-      await replenishPool(project.id);
+      await reconcilePool(project.id);
     } catch (error) {
-      console.error(`Pool: Failed to replenish pool for project ${project.id}:`, error);
+      console.error(`Pool: Failed to reconcile pool for project ${project.id}:`, error);
     }
   }
 }
 
 export function initializePool(): void {
-  if (getTargetPoolSize() === 0) {
-    console.log("Pool: Pool size is 0, disabled");
-    return;
-  }
-
   console.log(`Pool: Initializing with target size ${getTargetPoolSize()}`);
-  replenishAllPools().catch((error) => console.error("Pool: Initial replenishment failed:", error));
+  reconcileAllPools().catch((error) =>
+    console.error("Pool: Initial reconciliation failed:", error),
+  );
 }

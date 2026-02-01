@@ -1,8 +1,8 @@
 export {
   claimPooledSession,
   createPooledSession,
-  replenishPool,
-  replenishAllPools,
+  reconcilePool,
+  reconcileAllPools,
   getPoolStats,
   getTargetPoolSize,
   setPoolBrowserService,
