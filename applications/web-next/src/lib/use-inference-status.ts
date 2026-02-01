@@ -56,7 +56,7 @@ export function useInferenceStatus(
       }
     };
 
-    subscribeToSessionEvents(labSessionId, handleEvent, abortController.signal);
+    subscribeToSessionEvents(labSessionId, handleEvent);
 
     return () => {
       abortController.abort();

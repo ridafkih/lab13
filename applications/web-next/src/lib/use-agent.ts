@@ -220,8 +220,6 @@ export function useAgent(labSessionId: string): UseAgentResult {
   useEffect(() => {
     if (!opencodeSessionId) return;
 
-    const abortController = new AbortController();
-
     const handleMessageUpdated = (info: Message) => {
       setMessages((previous) => {
         const existing = previous.find((message) => message.id === info.id);
@@ -264,11 +262,7 @@ export function useAgent(labSessionId: string): UseAgentResult {
       }
     };
 
-    subscribeToSessionEvents(labSessionId, processEvent, abortController.signal);
-
-    return () => {
-      abortController.abort();
-    };
+    return subscribeToSessionEvents(labSessionId, processEvent);
   }, [labSessionId, opencodeSessionId]);
 
   const sendMessage = useCallback(
@@ -285,9 +279,11 @@ export function useAgent(labSessionId: string): UseAgentResult {
         const response = await opencodeClient.session.promptAsync({
           path: { id: opencodeSessionId },
           body: {
+            model: {
+              providerID,
+              modelID,
+            },
             parts: [{ type: "text", text: content }],
-            providerID,
-            modelID,
           },
         });
 

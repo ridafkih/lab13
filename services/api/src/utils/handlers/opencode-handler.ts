@@ -98,6 +98,35 @@ function buildTargetUrl(path: string, url: URL, labSessionId: string | null): st
   return `${config.opencodeUrl}${path}${queryString ? `?${queryString}` : ""}`;
 }
 
+function createAbortableStream(
+  upstream: ReadableStream<Uint8Array> | null,
+  abortController: AbortController,
+): ReadableStream<Uint8Array> | null {
+  if (!upstream) return null;
+
+  return new ReadableStream({
+    async start(controller) {
+      const reader = upstream.getReader();
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.enqueue(value);
+        }
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      } finally {
+        reader.releaseLock();
+      }
+    },
+    cancel() {
+      abortController.abort();
+    },
+  });
+}
+
 export type OpenCodeProxyHandler = (request: Request, url: URL) => Promise<Response>;
 
 export function createOpenCodeProxyHandler(promptService: PromptService): OpenCodeProxyHandler {
@@ -109,16 +138,22 @@ export function createOpenCodeProxyHandler(promptService: PromptService): OpenCo
     const forwardHeaders = buildForwardHeaders(request);
     const body = await buildProxyBody(request, path, labSessionId, promptService);
 
+    const upstreamAbort = new AbortController();
+    request.signal.addEventListener("abort", () => upstreamAbort.abort(), { once: true });
+
     const proxyResponse = await fetch(targetUrl, {
       method: request.method,
       headers: forwardHeaders,
       body,
-      signal: request.signal,
+      signal: upstreamAbort.signal,
       ...(body ? { duplex: "half" } : {}),
     });
 
     if (isSseResponse(path, proxyResponse)) {
-      return buildSseResponse(proxyResponse.body, proxyResponse.status);
+      return buildSseResponse(
+        createAbortableStream(proxyResponse.body, upstreamAbort),
+        proxyResponse.status,
+      );
     }
 
     return buildStandardResponse(proxyResponse);
