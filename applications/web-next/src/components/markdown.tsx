@@ -70,10 +70,7 @@ const components = {
   ),
 
   code: ({ children, className, ...props }: ComponentPropsWithoutRef<"code">) => (
-    <code
-      className={cn("font-mono text-[0.95em] px-1 py-0.5 bg-border", className)}
-      {...props}
-    >
+    <code className={cn("font-mono text-[0.95em] px-1 py-0.5 bg-border", className)} {...props}>
       {children}
     </code>
   ),

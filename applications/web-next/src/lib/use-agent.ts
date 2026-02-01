@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createOpencodeClient, type Message, type Part } from "@opencode-ai/sdk/client";
 import { api } from "./api";
-import { subscribeToSessionEvents, type Event } from "./opencode-events";
+import { useOpenCodeSession, type Event } from "./opencode-session";
 
 interface LoadedMessage {
   info: Message;
@@ -121,6 +121,7 @@ export async function prefetchSessionMessages(labSessionId: string): Promise<voi
 }
 
 export function useAgent(labSessionId: string): UseAgentResult {
+  const { subscribe } = useOpenCodeSession();
   const [opencodeSessionId, setOpencodeSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [messages, setMessages] = useState<MessageState[]>([]);
@@ -260,8 +261,8 @@ export function useAgent(labSessionId: string): UseAgentResult {
       }
     };
 
-    return subscribeToSessionEvents(labSessionId, processEvent);
-  }, [labSessionId, opencodeSessionId]);
+    return subscribe(processEvent);
+  }, [subscribe, opencodeSessionId]);
 
   const sendMessage = useCallback(
     async ({ content, modelId }: SendMessageOptions) => {

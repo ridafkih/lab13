@@ -48,10 +48,12 @@ import { useAgent, prefetchSessionMessages, type MessageState } from "@/lib/use-
 import { fetchChannelSnapshot, prefetchSessionContainers } from "@/lib/api";
 import { useSessionStatus } from "@/lib/use-session-status";
 import { useSessionsSync } from "@/lib/use-sessions-sync";
+import { OpenCodeSessionProvider } from "@/lib/opencode-session";
 
 function SessionItem({ session }: { session: Session }) {
   const { selected, select } = useSplitPane();
-  const status = useSessionStatus(session);
+  const isSelected = selected === session.id;
+  const status = useSessionStatus(session, { subscribeToEvents: isSelected });
 
   const handleMouseDown = () => {
     prefetchSessionMessages(session.id);
@@ -81,27 +83,47 @@ function ProjectSessionsList({ project }: { project: Project }) {
   const { select } = useSplitPane();
   const { data: sessions } = useSessions(project.id);
   const createSession = useCreateSession();
-  const [creationState] = useSessionCreation();
+  const [creationState, setCreationState] = useSessionCreation();
 
+  const sessionCount = sessions?.length ?? 0;
   const isCreatingHere = creationState.isCreating && creationState.projectId === project.id;
+  const showSkeleton = isCreatingHere && sessionCount === creationState.sessionCountAtCreation;
+
+  useEffect(() => {
+    if (!isCreatingHere || !sessions) return;
+    if (sessionCount > creationState.sessionCountAtCreation) {
+      const newSession = sessions[sessions.length - 1];
+      if (newSession) {
+        select(newSession.id);
+        setCreationState({ isCreating: false, projectId: null, sessionCountAtCreation: 0 });
+      }
+    }
+  }, [
+    isCreatingHere,
+    sessions,
+    sessionCount,
+    creationState.sessionCountAtCreation,
+    select,
+    setCreationState,
+  ]);
 
   const handleAddSession = () => {
-    createSession(project.id, { onCreated: select });
+    createSession(project.id, { currentSessionCount: sessionCount });
   };
 
   return (
     <ProjectNavigator.List>
       <ProjectNavigator.Header onAdd={handleAddSession}>
         <ProjectNavigator.HeaderName>{project.name}</ProjectNavigator.HeaderName>
-        <ProjectNavigator.HeaderCount>{sessions?.length ?? 0}</ProjectNavigator.HeaderCount>
+        <ProjectNavigator.HeaderCount>{sessionCount}</ProjectNavigator.HeaderCount>
       </ProjectNavigator.Header>
       {sessions?.map((session) => (
         <SessionItem key={session.id} session={session} />
       ))}
-      {isCreatingHere && (
+      {showSkeleton && (
         <ProjectNavigator.ItemSkeleton>
           <ProjectNavigator.ItemSkeletonBlock />
-          <ProjectNavigator.ItemEmptyTitle>Creating...</ProjectNavigator.ItemEmptyTitle>
+          <ProjectNavigator.ItemEmptyTitle>Spawning Session...</ProjectNavigator.ItemEmptyTitle>
         </ProjectNavigator.ItemSkeleton>
       )}
     </ProjectNavigator.List>
@@ -584,9 +606,9 @@ function SettingsView() {
   );
 }
 
-function AppViewContent({ selected }: { selected: string | null }) {
+function AppViewContent() {
   const { view } = useAppView();
-  const { select } = useSplitPane();
+  const { selected, select } = useSplitPane();
   const { data: sessionData } = useSessionData(selected);
   const deleteSession = useDeleteSession();
 
@@ -642,6 +664,11 @@ function AppViewContent({ selected }: { selected: string | null }) {
   );
 }
 
+function OpenCodeSessionWrapper({ children }: { children: React.ReactNode }) {
+  const { selected } = useSplitPane();
+  return <OpenCodeSessionProvider sessionId={selected}>{children}</OpenCodeSessionProvider>;
+}
+
 export default function Page() {
   return (
     <AppView.Provider>
@@ -649,14 +676,16 @@ export default function Page() {
         <div className="flex flex-col h-screen">
           <Nav items={navItems} />
           <SplitPane.Root>
-            <SplitPane.Primary>
-              <ProjectNavigatorView>
-                <PromptArea />
-              </ProjectNavigatorView>
-            </SplitPane.Primary>
-            <SplitPane.Secondary>
-              {(selected) => <AppViewContent selected={selected} />}
-            </SplitPane.Secondary>
+            <OpenCodeSessionWrapper>
+              <SplitPane.Primary>
+                <ProjectNavigatorView>
+                  <PromptArea />
+                </ProjectNavigatorView>
+              </SplitPane.Primary>
+              <SplitPane.Secondary>
+                <AppViewContent />
+              </SplitPane.Secondary>
+            </OpenCodeSessionWrapper>
           </SplitPane.Root>
         </div>
       </Orchestration.Provider>

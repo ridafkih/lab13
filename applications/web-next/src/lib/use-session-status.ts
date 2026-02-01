@@ -13,10 +13,14 @@ type SessionContainer = {
   urls: { port: number; url: string }[];
 };
 
-export function useSessionStatus(session: Session): SessionStatus {
+export function useSessionStatus(
+  session: Session,
+  options?: { subscribeToEvents?: boolean },
+): SessionStatus {
+  const { subscribeToEvents = false } = options ?? {};
   const { useChannel } = useMultiplayer();
   const containers: SessionContainer[] = useChannel("sessionContainers", { uuid: session.id });
-  const inferenceStatus = useInferenceStatus(session.id, session.opencodeSessionId);
+  const inferenceStatus = useInferenceStatus(session.opencodeSessionId, subscribeToEvents);
 
   // Priority:
   // 1. If session.status === "deleting" → "deleting"

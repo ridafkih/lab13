@@ -6,9 +6,14 @@ import type { Session } from "@lab/client";
 interface CreationState {
   isCreating: boolean;
   projectId: string | null;
+  sessionCountAtCreation: number;
 }
 
-const creationStateAtom = atom<CreationState>({ isCreating: false, projectId: null });
+const creationStateAtom = atom<CreationState>({
+  isCreating: false,
+  projectId: null,
+  sessionCountAtCreation: 0,
+});
 
 export function useSessionCreation() {
   return useAtom(creationStateAtom);
@@ -69,7 +74,7 @@ export function useSession(sessionId: string | null) {
 
 interface CreateSessionOptions {
   title?: string;
-  onCreated: (sessionId: string) => void;
+  currentSessionCount: number;
 }
 
 export function useCreateSession() {
@@ -77,9 +82,9 @@ export function useCreateSession() {
   const [, setCreationState] = useAtom(creationStateAtom);
 
   return async (projectId: string, options: CreateSessionOptions) => {
-    const { title, onCreated } = options;
+    const { title, currentSessionCount } = options;
 
-    setCreationState({ isCreating: true, projectId });
+    setCreationState({ isCreating: true, projectId, sessionCountAtCreation: currentSessionCount });
 
     try {
       const session = await api.sessions.create(projectId, { title });
@@ -91,9 +96,8 @@ export function useCreateSession() {
         },
         false,
       );
-      onCreated(session.id);
-    } finally {
-      setCreationState({ isCreating: false, projectId: null });
+    } catch {
+      setCreationState({ isCreating: false, projectId: null, sessionCountAtCreation: 0 });
     }
   };
 }

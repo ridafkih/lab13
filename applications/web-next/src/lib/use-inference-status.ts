@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { subscribeToSessionEvents, type Event } from "./opencode-events";
+import { useState, useEffect, useCallback } from "react";
+import { useOpenCodeSession, type Event } from "./opencode-session";
 
 type InferenceStatus = "generating" | "idle";
 
@@ -32,20 +32,14 @@ function getSessionIdFromEvent(event: Event): string | undefined {
 }
 
 export function useInferenceStatus(
-  labSessionId: string | null,
   opencodeSessionId: string | null,
+  enabled: boolean = true,
 ): InferenceStatus {
+  const { subscribe } = useOpenCodeSession();
   const [status, setStatus] = useState<InferenceStatus>("idle");
 
-  useEffect(() => {
-    if (!labSessionId || !opencodeSessionId) {
-      setStatus("idle");
-      return;
-    }
-
-    const abortController = new AbortController();
-
-    const handleEvent = (event: Event): void => {
+  const handleEvent = useCallback(
+    (event: Event): void => {
       const eventSessionId = getSessionIdFromEvent(event);
       if (eventSessionId !== opencodeSessionId) return;
 
@@ -54,14 +48,18 @@ export function useInferenceStatus(
       } else if (event.type === "session.idle") {
         setStatus("idle");
       }
-    };
+    },
+    [opencodeSessionId],
+  );
 
-    subscribeToSessionEvents(labSessionId, handleEvent);
+  useEffect(() => {
+    if (!enabled || !opencodeSessionId) {
+      setStatus("idle");
+      return;
+    }
 
-    return () => {
-      abortController.abort();
-    };
-  }, [labSessionId, opencodeSessionId]);
+    return subscribe(handleEvent);
+  }, [enabled, opencodeSessionId, subscribe, handleEvent]);
 
   return status;
 }
