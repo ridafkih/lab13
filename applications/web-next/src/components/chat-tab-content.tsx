@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { Chat, useChat } from "@/components/chat";
 import { TextAreaGroup } from "@/components/textarea-group";
 import { MessagePart } from "@/components/message-part";
-import { useModels } from "@/lib/hooks";
+import { useModels, usePreferredModel } from "@/lib/hooks";
 import type { MessageState } from "@/lib/use-agent";
 
 type ChatTabContentProps = {
@@ -14,14 +14,24 @@ type ChatTabContentProps = {
 export function ChatTabContent({ messages }: ChatTabContentProps) {
   const { data: modelGroups } = useModels();
   const { state, actions } = useChat();
+  const [preferredModel, setPreferredModel] = usePreferredModel();
   const isStreamingRef = useRef(false);
 
   useEffect(() => {
     if (modelGroups && !state.modelId) {
-      const firstModel = modelGroups[0]?.models[0];
-      if (firstModel) actions.setModelId(firstModel.value);
+      const validModel = modelGroups
+        .flatMap(({ models }) => models)
+        .find(({ value }) => value === preferredModel);
+      const fallback = modelGroups[0]?.models[0];
+      const modelToSet = validModel?.value ?? fallback?.value;
+      if (modelToSet) actions.setModelId(modelToSet);
     }
-  }, [modelGroups, state.modelId, actions]);
+  }, [modelGroups, state.modelId, preferredModel, actions]);
+
+  const handleModelChange = (value: string) => {
+    actions.setModelId(value);
+    setPreferredModel(value);
+  };
 
   const lastMessage = messages[messages.length - 1];
   const isStreaming = lastMessage?.role === "assistant";
@@ -56,7 +66,7 @@ export function ChatTabContent({ messages }: ChatTabContentProps) {
           <TextAreaGroup.ModelSelector
             value={state.modelId}
             groups={modelGroups}
-            onChange={actions.setModelId}
+            onChange={handleModelChange}
           />
         )}
       </Chat.Input>

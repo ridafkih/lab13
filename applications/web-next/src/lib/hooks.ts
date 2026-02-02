@@ -1,7 +1,14 @@
 import useSWR, { useSWRConfig } from "swr";
 import { atom, useAtom } from "jotai";
+import { atomWithStorage } from "jotai/utils";
 import { api } from "./api";
 import type { Session } from "@lab/client";
+
+const preferredModelAtom = atomWithStorage<string | null>("preferred-model", null);
+
+export function usePreferredModel() {
+  return useAtom(preferredModelAtom);
+}
 
 interface CreationState {
   isCreating: boolean;
