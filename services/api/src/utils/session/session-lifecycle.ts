@@ -32,15 +32,23 @@ export async function cleanupSession(
     try {
       await proxyManager.unregisterCluster(sessionId);
     } catch (error) {
+      // Cluster may not be registered if initialization failed
       console.warn(`Failed to unregister proxy cluster for session ${sessionId}:`, error);
     }
   }
 
+  // Always try to disconnect Caddy as a fallback - it may have been connected
+  // during a partial registerCluster that failed, or proxy may not be initialized
   if (config.caddyContainerName) {
     try {
       await docker.disconnectFromNetwork(config.caddyContainerName, networkName);
     } catch (error) {
-      console.warn(`Failed to disconnect caddy from network ${networkName}:`, error);
+      // Ignore "not connected" errors - this is expected if:
+      // 1. unregisterCluster already disconnected Caddy
+      // 2. Caddy was never connected (routes were never registered)
+      if (!String(error).includes("is not connected to network")) {
+        console.warn(`Failed to disconnect caddy from network ${networkName}:`, error);
+      }
     }
   }
 
@@ -48,7 +56,9 @@ export async function cleanupSession(
     try {
       await docker.disconnectFromNetwork(config.browserContainerName, networkName);
     } catch (error) {
-      console.warn(`Failed to disconnect browser from network ${networkName}:`, error);
+      if (!String(error).includes("is not connected to network")) {
+        console.warn(`Failed to disconnect browser from network ${networkName}:`, error);
+      }
     }
   }
 
@@ -56,7 +66,9 @@ export async function cleanupSession(
     try {
       await docker.disconnectFromNetwork(config.opencodeContainerName, networkName);
     } catch (error) {
-      console.warn(`Failed to disconnect opencode from network ${networkName}:`, error);
+      if (!String(error).includes("is not connected to network")) {
+        console.warn(`Failed to disconnect opencode from network ${networkName}:`, error);
+      }
     }
   }
 
