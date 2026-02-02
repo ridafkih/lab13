@@ -1,9 +1,10 @@
 "use client";
 
+import { useEffect, useRef, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import { Review } from "@/components/review";
 import { TextAreaGroup } from "@/components/textarea-group";
 import { useFileBrowser } from "@/lib/use-file-browser";
-import type { ReactNode } from "react";
 
 type FileBrowserProviderProps = {
   sessionId: string;
@@ -11,7 +12,16 @@ type FileBrowserProviderProps = {
 };
 
 function FileBrowserProvider({ sessionId, children }: FileBrowserProviderProps) {
+  const searchParams = useSearchParams();
+  const fileParam = searchParams.get("file");
   const browser = useFileBrowser(sessionId);
+  const initialFileHandledRef = useRef(false);
+
+  useEffect(() => {
+    if (!fileParam || browser.state.rootLoading || initialFileHandledRef.current) return;
+    initialFileHandledRef.current = true;
+    browser.actions.selectFile(fileParam);
+  }, [fileParam, browser.state.rootLoading, browser.actions]);
 
   return (
     <Review.Provider files={[]} onDismiss={() => {}} browser={browser}>

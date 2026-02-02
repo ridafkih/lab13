@@ -61,9 +61,11 @@ function SessionInfoPaneEmpty({ children }: { children: ReactNode }) {
 function SessionInfoPaneFileItem({
   path,
   status,
+  onClick,
 }: {
   path: string;
   status?: "added" | "modified" | "deleted";
+  onClick?: () => void;
 }) {
   const statusColor = {
     added: "success",
@@ -72,13 +74,17 @@ function SessionInfoPaneFileItem({
   } as const;
 
   return (
-    <div className={row({ interactive: true })}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={row({ interactive: true, className: "w-full text-left" })}
+    >
       <FileText size={12} className={text({ color: "muted" })} />
       <span className="flex-1 truncate">{path}</span>
       {status && (
         <span className={text({ color: statusColor[status] })}>{status[0].toUpperCase()}</span>
       )}
-    </div>
+    </button>
   );
 }
 

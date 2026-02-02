@@ -8,22 +8,10 @@ import { useSessionStatus, type SessionStatus } from "@/lib/use-session-status";
 import { useSessionTitle } from "@/lib/use-session-title";
 import { prefetchSessionMessages } from "@/lib/use-agent";
 import { prefetchSessionContainers } from "@/lib/api";
+import { prefetchFileStatuses } from "@/lib/use-file-statuses";
 import { StatusIcon } from "./status-icon";
 import { Hash } from "./hash";
 import { ProjectNavigator } from "./project-navigator-list";
-
-/**
- * Session item compound component following composition patterns.
- * Provides shared data/logic via context, UI pieces compose as needed.
- *
- * Usage:
- *   <SessionItem.Provider session={session}>
- *     <SessionItem.Status />
- *     <SessionItem.Hash />
- *     <SessionItem.Title />
- *     <SessionItem.LastMessage />
- *   </SessionItem.Provider>
- */
 
 interface SessionItemContextValue {
   session: Session;
@@ -58,6 +46,7 @@ function SessionItemProvider({ session, children }: ProviderProps) {
   const prefetch = () => {
     prefetchSessionMessages(session.id);
     prefetchSessionContainers(session.id);
+    prefetchFileStatuses(session.id);
   };
 
   return (

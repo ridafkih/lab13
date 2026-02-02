@@ -1,8 +1,10 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { SessionInfoPane } from "@/components/session-info-pane";
 import { BrowserStreamView } from "@/components/browser-stream";
+import { useFileStatuses } from "@/lib/use-file-statuses";
 import type { Project, Session } from "@lab/client";
 
 type SessionContainer = {
@@ -20,16 +22,33 @@ type SessionInfoViewProps = {
 };
 
 export function SessionInfoView({ session, project, containers, onDelete }: SessionInfoViewProps) {
+  const router = useRouter();
+  const changedFiles = useFileStatuses(session.id);
   const links = containers.flatMap((container) => container.urls.map(({ url }) => url));
 
   const projectContainers = project.containers ?? [];
   const hasSessionContainers = containers.length > 0;
 
+  const handleFileClick = (path: string) => {
+    router.push(`/editor/${session.id}/review?file=${encodeURIComponent(path)}`);
+  };
+
   return (
     <SessionInfoPane.Root>
       <SessionInfoPane.Section>
         <SessionInfoPane.SectionHeader>Changed Files</SessionInfoPane.SectionHeader>
-        <SessionInfoPane.Empty>No changed files</SessionInfoPane.Empty>
+        {changedFiles.length > 0 ? (
+          changedFiles.map((file) => (
+            <SessionInfoPane.FileItem
+              key={file.path}
+              path={file.path}
+              status={file.status}
+              onClick={() => handleFileClick(file.path)}
+            />
+          ))
+        ) : (
+          <SessionInfoPane.Empty>No changed files</SessionInfoPane.Empty>
+        )}
       </SessionInfoPane.Section>
 
       <SessionInfoPane.Section>
