@@ -4,6 +4,7 @@ import type { ConnectionState } from "./connection";
 
 export type ChannelState<T> =
   | { status: "connecting" }
+  | { status: "reconnecting"; data: T }
   | { status: "connected"; data: T }
   | { status: "error"; error: string }
   | { status: "disconnected" };

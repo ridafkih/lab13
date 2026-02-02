@@ -104,6 +104,10 @@ export class ConnectionManager {
     this.setState({ status: "disconnected" });
   }
 
+  isSubscribed(channel: string): boolean {
+    return (this.subscriptionCounts.get(channel) ?? 0) > 0;
+  }
+
   subscribe(channel: string, listener: MessageListener): () => void {
     const count = this.subscriptionCounts.get(channel) ?? 0;
     this.subscriptionCounts.set(channel, count + 1);

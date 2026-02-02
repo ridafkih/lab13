@@ -87,7 +87,14 @@ export function createHooks<S extends Schema>(schema: S) {
       useEffect(() => {
         if (shouldSkip) return;
 
-        setState({ status: "connecting" });
+        const alreadySubscribed = connection.isSubscribed(resolvedPath);
+        if (!alreadySubscribed) {
+          setState((prev: ChannelState<unknown>) =>
+            prev.status === "connected" || prev.status === "reconnecting"
+              ? { status: "reconnecting", data: prev.data }
+              : { status: "connecting" },
+          );
+        }
 
         const unsubscribe = connection.subscribe(resolvedPath, (message) => {
           switch (message.type) {
@@ -96,7 +103,7 @@ export function createHooks<S extends Schema>(schema: S) {
               break;
             case "delta":
               setState((prev: ChannelState<unknown>) =>
-                prev.status === "connected"
+                prev.status === "connected" || prev.status === "reconnecting"
                   ? { status: "connected", data: applyDelta(prev.data, message.data, channel) }
                   : prev,
               );
@@ -110,7 +117,9 @@ export function createHooks<S extends Schema>(schema: S) {
         return unsubscribe;
       }, [channel, connection, resolvedPath, setState, shouldSkip]);
 
-      if (shouldSkip || state.status !== "connected") return channel.default;
+      if (shouldSkip || state.status === "connecting") return channel.default;
+      if (state.status === "reconnecting") return parseSnapshot(channel, state.data);
+      if (state.status !== "connected") return channel.default;
       return parseSnapshot(channel, state.data);
     }
 
