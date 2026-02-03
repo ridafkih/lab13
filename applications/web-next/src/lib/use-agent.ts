@@ -36,6 +36,7 @@ interface UseAgentResult {
   abortSession: () => Promise<void>;
   isSending: boolean;
   sessionStatus: SessionStatus;
+  questionRequests: Map<string, string>;
 }
 
 interface SessionData {
@@ -102,6 +103,48 @@ function upsertPart(parts: Part[], part: Part): Part[] {
   return parts.map((existing, index) => (index === existingIndex ? part : existing));
 }
 
+interface PendingQuestion {
+  callID: string;
+  requestID: string;
+}
+
+function extractPendingQuestion(question: unknown): PendingQuestion | null {
+  if (typeof question !== "object" || question === null) {
+    return null;
+  }
+
+  if (!("id" in question) || typeof question.id !== "string") {
+    return null;
+  }
+
+  if (!("tool" in question) || typeof question.tool !== "object" || question.tool === null) {
+    return null;
+  }
+
+  if (!("callID" in question.tool) || typeof question.tool.callID !== "string") {
+    return null;
+  }
+
+  return { callID: question.tool.callID, requestID: question.id };
+}
+
+async function fetchPendingQuestions(labSessionId: string): Promise<PendingQuestion[]> {
+  const client = createSessionClient(labSessionId);
+  const response = await client.question.list();
+  if (response.error || !response.data) {
+    return [];
+  }
+
+  const pendingQuestions: PendingQuestion[] = [];
+  for (const question of response.data) {
+    const extracted = extractPendingQuestion(question);
+    if (extracted) {
+      pendingQuestions.push(extracted);
+    }
+  }
+  return pendingQuestions;
+}
+
 async function fetchSessionData(labSessionId: string): Promise<SessionData | null> {
   const labSession = await api.sessions.get(labSessionId);
   const client = createSessionClient(labSessionId);
@@ -141,6 +184,7 @@ export function useAgent(labSessionId: string): UseAgentResult {
   const [error, setError] = useState<Error | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>({ type: "idle" });
+  const [questionRequests, setQuestionRequests] = useState<Map<string, string>>(() => new Map());
   const currentOpencodeSessionRef = useRef<string | null>(null);
   const sendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamedMessagesRef = useRef<MessageState[] | null>(null);
@@ -162,6 +206,17 @@ export function useAgent(labSessionId: string): UseAgentResult {
       currentOpencodeSessionRef.current = sessionData.opencodeSessionId;
     }
   }, [sessionData]);
+
+  useEffect(() => {
+    if (!labSessionId) return;
+    fetchPendingQuestions(labSessionId).then((pendingQuestions) => {
+      if (pendingQuestions.length > 0) {
+        setQuestionRequests(
+          new Map(pendingQuestions.map((question) => [question.callID, question.requestID])),
+        );
+      }
+    });
+  }, [labSessionId]);
 
   useEffect(() => {
     if (swrError) {
@@ -205,6 +260,9 @@ export function useAgent(labSessionId: string): UseAgentResult {
         "session.idle",
         "session.error",
         "session.status",
+        "question.asked",
+        "question.replied",
+        "question.rejected",
       ];
 
       if (sessionSpecificEvents.includes(event.type)) {
@@ -255,6 +313,27 @@ export function useAgent(labSessionId: string): UseAgentResult {
         }
         setIsSending(false);
         setSessionStatus({ type: "error" });
+      }
+
+      if (event.type === "question.asked") {
+        const props = event.properties as unknown as { callID?: string; requestID?: string };
+        const callID = props.callID;
+        const requestID = props.requestID;
+        if (callID && requestID) {
+          setQuestionRequests((prev) => new Map(prev).set(callID, requestID));
+        }
+      }
+
+      if (event.type === "question.replied" || event.type === "question.rejected") {
+        const props = event.properties as unknown as { callID?: string };
+        const callID = props.callID;
+        if (callID) {
+          setQuestionRequests((prev) => {
+            const next = new Map(prev);
+            next.delete(callID);
+            return next;
+          });
+        }
       }
     };
 
@@ -328,5 +407,6 @@ export function useAgent(labSessionId: string): UseAgentResult {
     abortSession,
     isSending,
     sessionStatus,
+    questionRequests,
   };
 }

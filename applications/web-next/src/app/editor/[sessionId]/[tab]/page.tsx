@@ -58,7 +58,8 @@ function SessionTabs() {
 
 function TabContent({ tab }: { tab: TabValue }) {
   const { sessionId, containerUrls } = useSessionContext();
-  const { messages, sendMessage, abortSession, sessionStatus } = useAgent(sessionId);
+  const { messages, sendMessage, abortSession, sessionStatus, questionRequests } =
+    useAgent(sessionId);
   const {
     reply: replyToQuestion,
     reject: rejectQuestion,
@@ -76,6 +77,7 @@ function TabContent({ tab }: { tab: TabValue }) {
             isQuestionSubmitting={isQuestionSubmitting}
             sessionStatus={sessionStatus}
             onAbort={abortSession}
+            questionRequests={questionRequests}
           />
         </Chat.Provider>
       );

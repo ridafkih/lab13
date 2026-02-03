@@ -60,7 +60,7 @@ function BrowserCanvasRoot({ sessionId, children }: RootProps) {
         return newBitmap;
       });
     } catch (error) {
-      console.error(error);
+      console.warn(error);
     }
   };
 
@@ -133,7 +133,7 @@ function BrowserCanvasView({ className }: { className?: string }) {
     try {
       context.drawImage(bitmap, 0, 0);
     } catch (error) {
-      console.error(error);
+      console.warn(error);
     }
   }, [bitmap]);
 

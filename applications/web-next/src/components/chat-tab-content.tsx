@@ -18,6 +18,7 @@ type ChatTabContentProps = {
   isQuestionSubmitting: boolean;
   sessionStatus: SessionStatus;
   onAbort: () => void;
+  questionRequests: Map<string, string>;
 };
 
 export function ChatTabContent({
@@ -27,6 +28,7 @@ export function ChatTabContent({
   isQuestionSubmitting,
   sessionStatus,
   onAbort,
+  questionRequests,
 }: ChatTabContentProps) {
   const { session } = useSessionContext();
   const status = useSessionStatus(session);
@@ -76,6 +78,7 @@ export function ChatTabContent({
       onReply={onQuestionReply}
       onReject={onQuestionReject}
       isSubmitting={isQuestionSubmitting}
+      questionRequests={questionRequests}
     >
       <Chat.MessageList>
         <Chat.Messages>

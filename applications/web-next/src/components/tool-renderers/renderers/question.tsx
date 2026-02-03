@@ -4,7 +4,7 @@ import { useState, createContext, use, type ReactNode } from "react";
 import { Check, X, Loader2 } from "lucide-react";
 import { tv } from "tailwind-variants";
 import { useQuestionActions } from "@/lib/question-context";
-import { getArray } from "../shared";
+import { getArray, getString } from "../shared";
 import type { ToolRendererProps } from "../types";
 
 interface QuestionOption {
@@ -314,20 +314,15 @@ function ActionButtons({ callId, questions, isSubmitting, onReply, onReject }: A
   );
 }
 
-function getNestedString(input: unknown, ...keys: string[]): string | undefined {
-  let current: unknown = input;
-  for (const key of keys) {
-    if (typeof current !== "object" || current === null) return undefined;
-    current = (current as Record<string, unknown>)[key];
-  }
-  return typeof current === "string" ? current : undefined;
-}
-
 function QuestionRenderer({ callId, input, status, output, error }: ToolRendererProps) {
   const questionActions = useQuestionActions();
   const questions = getArray<QuestionInfo>(input, "questions") ?? [];
 
-  const requestId = getNestedString(input, "metadata", "requestId");
+  const requestId =
+    (callId && questionActions?.questionRequests.get(callId)) ??
+    getString(input, "requestId") ??
+    getString(input, "requestID") ??
+    callId;
 
   if (status === "completed") {
     return (

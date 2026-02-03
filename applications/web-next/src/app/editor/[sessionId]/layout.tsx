@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { use, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import useSWR, { useSWRConfig } from "swr";
+import useSWR from "swr";
 import { BrowserStreamProvider } from "@/components/browser-stream";
 import { useProjects, useSession } from "@/lib/hooks";
 import { fetchChannelSnapshot } from "@/lib/api";
@@ -17,31 +17,20 @@ type SessionContainer = {
   urls: { port: number; url: string }[];
 };
 
-function isCachedArray<T>(value: unknown): value is { data: T[] } {
-  return (
-    typeof value === "object" && value !== null && "data" in value && Array.isArray(value.data)
-  );
-}
-
 function useSessionData(sessionId: string) {
   const { data: projects } = useProjects();
-  const { cache } = useSWRConfig();
+  const { data: session } = useSession(sessionId);
 
-  if (!projects) {
+  if (!projects || !session) {
     return { data: null };
   }
 
-  for (const project of projects) {
-    const cached = cache.get(`sessions-${project.id}`);
-    if (!isCachedArray<Session>(cached)) continue;
-
-    const session = cached.data.find((existing) => existing.id === sessionId);
-    if (session) {
-      return { data: { project, session } };
-    }
+  const project = projects.find(({ id }) => id === session.projectId);
+  if (!project) {
+    return { data: null };
   }
 
-  return { data: null };
+  return { data: { project, session } };
 }
 
 function useSessionContainers(sessionId: string) {
