@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
-import parse from "bash-parser";
+import { parse } from "sh-syntax";
 import type { ToolContext } from "../types/tool";
 import { config } from "../config/environment";
 
@@ -50,9 +50,9 @@ function findCommandNames(node: unknown): string[] {
   return names;
 }
 
-function containsBlockedCommand(command: string, blocked: string[]): boolean {
+async function containsBlockedCommand(command: string, blocked: string[]): Promise<boolean> {
   try {
-    const ast = parse(command);
+    const ast = await parse(command);
     const commandNames = findCommandNames(ast);
     return commandNames.some((name) => blocked.includes(name));
   } catch {
@@ -77,7 +77,7 @@ export function bash(server: McpServer, { docker }: ToolContext) {
       },
     },
     async (args) => {
-      if (containsBlockedCommand(args.command, ["gh"])) {
+      if (await containsBlockedCommand(args.command, ["gh"])) {
         return {
           isError: true,
           content: [

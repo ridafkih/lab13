@@ -15,6 +15,7 @@ interface ApiResult<T> {
 }
 
 interface ToolResult {
+  [key: string]: unknown;
   isError?: boolean;
   content: { type: "text"; text: string }[];
 }
