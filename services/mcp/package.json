@@ -11,6 +11,7 @@
   "dependencies": {
     "@lab/sandbox-docker": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.25.0",
+    "bash-parser": "^0.5.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

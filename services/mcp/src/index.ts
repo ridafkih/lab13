@@ -4,6 +4,7 @@ import { DockerClient } from "@lab/sandbox-docker";
 import { config } from "./config/environment";
 import { makeRegisterTool } from "./tools/register";
 import { bash } from "./tools/bash";
+import { github } from "./tools/github";
 import { listProcesses } from "./tools/list-processes";
 import { getContainerLogs } from "./tools/get-container-logs";
 import { getInternalUrl } from "./tools/get-internal-url";
@@ -19,6 +20,7 @@ const server = new McpServer({
 const { registerTool } = makeRegisterTool(server, docker);
 
 registerTool(bash);
+registerTool(github);
 registerTool(listProcesses);
 registerTool(getContainerLogs);
 registerTool(getInternalUrl);

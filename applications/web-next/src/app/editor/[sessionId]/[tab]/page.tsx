@@ -1,7 +1,6 @@
 "use client";
 
 import { Suspense, use } from "react";
-import { useRouter } from "next/navigation";
 import { Chat } from "@/components/chat";
 import { StatusIcon } from "@/components/status-icon";
 import { Breadcrumb } from "@/components/breadcrumb";
@@ -10,12 +9,10 @@ import { ChatTabContent } from "@/components/chat-tab-content";
 import { ReviewTabContent } from "@/components/review-tab-content";
 import { FrameTabContent } from "@/components/frame-tab-content";
 import { StreamTabContent } from "@/components/stream-tab-content";
-import { SessionInfoView } from "@/components/session-info-view";
 import { ChatLoadingFallback } from "@/components/suspense-fallbacks";
 import { PageFrame, Header, PageContent } from "@/components/layout-primitives";
 import { useAgent } from "@/lib/use-agent";
 import { useQuestions } from "@/lib/use-questions";
-import { useDeleteSession } from "@/lib/hooks";
 import { useSessionStatus } from "@/lib/use-session-status";
 import { useSessionTitle } from "@/lib/use-session-title";
 import { useSessionContext } from "../layout";
@@ -96,32 +93,6 @@ function TabContent({ tab }: { tab: TabValue }) {
   }
 }
 
-function SessionInfoPanel() {
-  const router = useRouter();
-  const { session, project, containers } = useSessionContext();
-  const deleteSession = useDeleteSession();
-
-  const handleDelete = () => {
-    if (!session) return;
-    deleteSession(session, () => router.push("/editor"));
-  };
-
-  if (!session || !project) {
-    return null;
-  }
-
-  return (
-    <div className="min-w-64 bg-bg z-20 overflow-y-auto">
-      <SessionInfoView
-        session={session}
-        project={project}
-        containers={containers}
-        onDelete={handleDelete}
-      />
-    </div>
-  );
-}
-
 type TabPageProps = {
   params: Promise<{ sessionId: string; tab: string }>;
 };
@@ -132,19 +103,14 @@ export default function TabPage({ params }: TabPageProps) {
   const currentTab = validTabs.includes(tab as TabValue) ? (tab as TabValue) : "chat";
 
   return (
-    <div className="h-full grid grid-cols-[2fr_1fr]">
-      <div className="border-r border-border min-w-0 min-h-0">
-        <PageFrame position="relative">
-          <SessionHeader />
-          <SessionTabs />
-          <PageContent display="flex">
-            <Suspense fallback={<ChatLoadingFallback />}>
-              <TabContent tab={currentTab} />
-            </Suspense>
-          </PageContent>
-        </PageFrame>
-      </div>
-      <SessionInfoPanel />
-    </div>
+    <PageFrame position="relative">
+      <SessionHeader />
+      <SessionTabs />
+      <PageContent display="flex">
+        <Suspense fallback={<ChatLoadingFallback />}>
+          <TabContent tab={currentTab} />
+        </Suspense>
+      </PageContent>
+    </PageFrame>
   );
 }

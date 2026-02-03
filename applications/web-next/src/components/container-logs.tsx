@@ -142,11 +142,7 @@ function ContainerLogsStatusIndicator({ status }: { status: LogSource["status"] 
     error: "bg-red-500",
   };
 
-  return (
-    <span
-      className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusColor[status])}
-    />
-  );
+  return <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", statusColor[status])} />;
 }
 
 function ContainerLogsContent({ className }: { className?: string }) {

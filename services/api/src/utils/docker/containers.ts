@@ -25,7 +25,6 @@ import {
   findSessionById,
   updateSessionStatus,
 } from "../repositories/session.repository";
-import { getGitHubCredentials } from "../repositories/github-settings.repository";
 import { proxyManager, isProxyInitialized, ensureProxyInitialized } from "../proxy";
 import { publisher } from "../../clients/publisher";
 import type { BrowserService } from "../browser/browser-service";
@@ -65,17 +64,9 @@ async function prepareContainerData(
   return { containerDefinition, ports, envVars, containerWorkspace };
 }
 
-interface GitHubEnvConfig {
-  token: string | null;
-  authorName: string | null;
-  authorEmail: string | null;
-  attributeAgent: boolean;
-}
-
 function buildEnvironmentVariables(
   sessionId: string,
   envVars: { key: string; value: string }[],
-  github?: GitHubEnvConfig | null,
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const envVar of envVars) {
@@ -83,21 +74,6 @@ function buildEnvironmentVariables(
   }
   env.AGENT_BROWSER_SOCKET_DIR = VOLUMES.BROWSER_SOCKET_DIR;
   env.AGENT_BROWSER_SESSION = sessionId;
-
-  if (github) {
-    if (github.token) {
-      env.GH_TOKEN = github.token;
-    }
-    if (github.authorName) {
-      env.GIT_AUTHOR_NAME = github.authorName;
-      env.GIT_COMMITTER_NAME = github.authorName;
-    }
-    if (github.authorEmail) {
-      env.GIT_AUTHOR_EMAIL = github.authorEmail;
-      env.GIT_COMMITTER_EMAIL = github.authorEmail;
-    }
-    env.GIT_TERMINAL_PROMPT = "0";
-  }
 
   return env;
 }
@@ -123,11 +99,10 @@ async function createAndStartContainer(
   projectId: string,
   networkName: string,
   prepared: PreparedContainer,
-  github?: GitHubEnvConfig | null,
 ): Promise<{ dockerId: string; clusterContainer: ClusterContainer | null }> {
   const { containerDefinition, ports, envVars, containerWorkspace } = prepared;
 
-  const env = buildEnvironmentVariables(sessionId, envVars, github);
+  const env = buildEnvironmentVariables(sessionId, envVars);
   const serviceHostname = containerDefinition.hostname || containerDefinition.id;
   const uniqueHostname = formatUniqueHostname(sessionId, containerDefinition.id);
   const projectName = formatProjectName(sessionId);
@@ -200,7 +175,6 @@ async function startContainersInLevel(
   networkName: string,
   containerIds: string[],
   preparedByContainerId: Map<string, PreparedContainer>,
-  github?: GitHubEnvConfig | null,
 ): Promise<{ dockerIds: string[]; clusterContainers: ClusterContainer[] }> {
   const levelDockerIds: string[] = [];
   const levelClusterContainers: ClusterContainer[] = [];
@@ -211,7 +185,7 @@ async function startContainersInLevel(
       if (!prepared) {
         throw new Error(`Prepared container not found for ${containerId}`);
       }
-      return createAndStartContainer(sessionId, projectId, networkName, prepared, github);
+      return createAndStartContainer(sessionId, projectId, networkName, prepared);
     }),
   );
 
@@ -242,14 +216,11 @@ export async function initializeSessionContainers(
 
     networkName = await createSessionNetwork(sessionId);
 
-    const [preparedContainers, githubCredentials] = await Promise.all([
-      Promise.all(
-        containerDefinitions.map((containerDefinition) =>
-          prepareContainerData(sessionId, containerDefinition),
-        ),
+    const preparedContainers = await Promise.all(
+      containerDefinitions.map((containerDefinition) =>
+        prepareContainerData(sessionId, containerDefinition),
       ),
-      getGitHubCredentials(),
-    ]);
+    );
 
     const preparedByContainerId = new Map<string, PreparedContainer>();
     for (const prepared of preparedContainers) {
@@ -263,7 +234,6 @@ export async function initializeSessionContainers(
         networkName,
         level.containerIds,
         preparedByContainerId,
-        githubCredentials,
       );
       dockerIds.push(...levelResult.dockerIds);
       clusterContainers.push(...levelResult.clusterContainers);

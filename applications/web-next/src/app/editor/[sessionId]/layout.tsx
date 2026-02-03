@@ -5,7 +5,8 @@ import { use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { BrowserStreamProvider } from "@/components/browser-stream";
-import { useProjects, useSession } from "@/lib/hooks";
+import { SessionInfoView } from "@/components/session-info-view";
+import { useProjects, useSession, useDeleteSession } from "@/lib/hooks";
 import { fetchChannelSnapshot } from "@/lib/api";
 import { useMultiplayer } from "@/lib/multiplayer";
 import type { Session, Project } from "@lab/client";
@@ -79,13 +80,41 @@ export default function SessionLayout({ children, params }: SessionLayoutProps) 
           containerUrls,
         }}
       >
-        {children}
+        <div className="h-full grid grid-cols-[2fr_1fr]">
+          <div className="border-r border-border min-w-0 min-h-0">{children}</div>
+          <SessionInfoPanel />
+        </div>
       </SessionContext.Provider>
     </BrowserStreamProvider>
   );
 }
 
-// Context for session data
+function SessionInfoPanel() {
+  const router = useRouter();
+  const { session, project, containers } = useSessionContext();
+  const deleteSession = useDeleteSession();
+
+  const handleDelete = () => {
+    if (!session) return;
+    deleteSession(session, () => router.push("/editor"));
+  };
+
+  if (!session || !project) {
+    return null;
+  }
+
+  return (
+    <div className="min-w-64 bg-bg z-20 overflow-y-auto">
+      <SessionInfoView
+        session={session}
+        project={project}
+        containers={containers}
+        onDelete={handleDelete}
+      />
+    </div>
+  );
+}
+
 import { createContext, useContext } from "react";
 
 type SessionContextValue = {
