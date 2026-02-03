@@ -1,7 +1,5 @@
-// Factory functions (recommended)
 export { createDockerClient, createPortAllocator } from "./factories";
 
-// Types
 export type {
   DockerClientOptions,
   DockerContainerEvent,
@@ -12,11 +10,9 @@ export {
   DockerContainerEventActionSchema,
 } from "./types";
 
-// Classes (backward compatibility)
 export { DockerClient } from "./clients/docker-client";
 export { PortAllocator } from "./clients/port-allocator";
 
-// Constants
 export {
   DEFAULT_SOCKET_PATH,
   DEFAULT_DOCKER_PORT,
@@ -25,7 +21,6 @@ export {
   VOLUME_CLONE_COMMAND,
 } from "./constants";
 
-// Utils
 export {
   hasStatusCode,
   isNotFoundError,
