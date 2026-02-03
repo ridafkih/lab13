@@ -86,7 +86,14 @@ function SessionListEmpty() {
 }
 
 function SessionListLoading() {
-  return <div className="text-text-muted text-sm py-4 text-center">Loading projects...</div>;
+  return (
+    <div className="py-2">
+      <div className="flex items-center gap-2 py-2 text-text-muted">
+        <div className="h-3.5 w-3.5 rounded-full bg-bg-hover animate-pulse" />
+        <div className="h-3 w-24 rounded bg-bg-hover animate-pulse" />
+      </div>
+    </div>
+  );
 }
 
 function SessionListView() {

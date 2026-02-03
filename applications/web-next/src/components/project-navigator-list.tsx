@@ -85,6 +85,18 @@ function ProjectNavigatorHeaderCount({ children }: { children: ReactNode }) {
   return <span className="text-text-muted">{children}</span>;
 }
 
+function ProjectNavigatorHeaderSkeleton() {
+  return (
+    <div className="flex flex-col gap-px bg-border select-none">
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-muted">
+        <ChevronRight size={14} className="text-text-muted shrink-0" />
+        <Loader2 size={14} className="animate-spin text-text-muted shrink-0" />
+        <span className="text-text-muted">Loading...</span>
+      </div>
+    </div>
+  );
+}
+
 const listItem = tv({
   base: "flex items-center gap-2 px-3 py-1.5 cursor-pointer bg-bg",
   variants: {
@@ -167,6 +179,7 @@ const ProjectNavigator = {
   Header: ProjectNavigatorHeader,
   HeaderName: ProjectNavigatorHeaderName,
   HeaderCount: ProjectNavigatorHeaderCount,
+  HeaderSkeleton: ProjectNavigatorHeaderSkeleton,
   Item: ProjectNavigatorItem,
   ItemTitle: ProjectNavigatorItemTitle,
   ItemDescription: ProjectNavigatorItemDescription,

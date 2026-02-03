@@ -97,9 +97,7 @@ export function ProjectNavigatorView({ selectedSessionId = null }: ProjectNaviga
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="flex flex-col gap-px bg-border pb-px">
-        {isLoading && (
-          <div className="px-3 py-2 bg-bg text-xs text-text-muted">Loading projects...</div>
-        )}
+        {!projects && isLoading && <ProjectNavigator.HeaderSkeleton />}
         {error && (
           <div className="px-3 py-2 bg-bg text-xs text-red-500">Failed to load projects</div>
         )}
