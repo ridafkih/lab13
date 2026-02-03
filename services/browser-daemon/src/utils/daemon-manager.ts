@@ -11,20 +11,19 @@ interface SessionPorts {
   cdpPort: number;
 }
 
-const BASE_CDP_PORT = 9222;
-
 export function createDaemonManager(config: DaemonManagerConfig): DaemonManager {
   const activeSessions = new Map<string, SessionPorts>();
   const daemonWorkers = new Map<string, DaemonWorkerHandle>();
   const sessionUrls = new Map<string, string>();
   const eventHandlers = new Set<DaemonEventHandler>();
-  const portCounters = {
-    stream: config.baseStreamPort + 1,
-    cdp: BASE_CDP_PORT + 1,
-  };
 
-  const allocateStreamPort = (): number => portCounters.stream++;
-  const allocateCdpPort = (): number => portCounters.cdp++;
+  let nextPort = config.baseStreamPort + 1;
+
+  const allocatePorts = (): { streamPort: number; cdpPort: number } => {
+    const cdpPort = nextPort++;
+    const streamPort = nextPort++;
+    return { streamPort, cdpPort };
+  };
 
   const emit = (event: DaemonEvent): void => {
     for (const handler of eventHandlers) {
@@ -38,13 +37,11 @@ export function createDaemonManager(config: DaemonManagerConfig): DaemonManager 
 
   const recoveryCallbacks = {
     onRecover: (sessionId: string, streamPort: number, cdpPort?: number) => {
-      const resolvedCdpPort = cdpPort ?? allocateCdpPort();
+      const resolvedCdpPort = cdpPort ?? nextPort++;
       activeSessions.set(sessionId, { streamPort, cdpPort: resolvedCdpPort });
-      if (streamPort >= portCounters.stream) {
-        portCounters.stream = streamPort + 1;
-      }
-      if (resolvedCdpPort >= portCounters.cdp) {
-        portCounters.cdp = resolvedCdpPort + 1;
+      const maxRecoveredPort = Math.max(streamPort, resolvedCdpPort);
+      if (maxRecoveredPort >= nextPort) {
+        nextPort = maxRecoveredPort + 1;
       }
     },
   };
@@ -75,8 +72,7 @@ export function createDaemonManager(config: DaemonManagerConfig): DaemonManager 
         };
       }
 
-      const streamPort = allocateStreamPort();
-      const cdpPort = allocateCdpPort();
+      const { streamPort, cdpPort } = allocatePorts();
       activeSessions.set(sessionId, { streamPort, cdpPort });
 
       const handle = spawnDaemon({ sessionId, streamPort, cdpPort, profileDir: config.profileDir });

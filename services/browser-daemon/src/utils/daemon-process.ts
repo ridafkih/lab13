@@ -106,8 +106,7 @@ export function spawnDaemon(options: SpawnOptions): DaemonWorkerHandle {
       worker.postMessage({ type: "navigate", data: { url } });
     },
     terminate: () => {
-      worker.postMessage({ type: "terminate" });
-      setTimeout(() => worker.terminate(), 1000);
+      worker.terminate();
     },
     onMessage: (handler) => {
       messageHandlers.add(handler);
