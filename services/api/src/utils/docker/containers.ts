@@ -110,6 +110,7 @@ async function createAndStartContainer(
 
   const containerVolumes = [
     { source: VOLUMES.WORKSPACES_HOST_PATH, target: "/workspaces" },
+    { source: VOLUMES.OPENCODE_AUTH_HOST_PATH, target: VOLUMES.OPENCODE_AUTH_TARGET },
     { source: config.browserSocketVolume, target: VOLUMES.BROWSER_SOCKET_DIR },
   ];
 

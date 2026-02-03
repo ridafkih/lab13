@@ -217,4 +217,5 @@ volumes:
   browser_sockets:
   browser_profiles:
   opencode_data:
+  opencode_auth:
   rustfs_data:

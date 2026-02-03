@@ -7,6 +7,9 @@ export const LABELS = {
 export const VOLUMES = {
   WORKSPACES: "lab_session_workspaces",
   WORKSPACES_HOST_PATH: "/var/lib/docker/volumes/lab_session_workspaces/_data",
+  OPENCODE_AUTH: "lab_opencode_auth",
+  OPENCODE_AUTH_HOST_PATH: "/var/lib/docker/volumes/lab_opencode_auth/_data",
+  OPENCODE_AUTH_TARGET: "/root/.local/share/opencode",
   BROWSER_SOCKET_DIR: "/tmp/agent-browser-socket",
 } as const;
 
