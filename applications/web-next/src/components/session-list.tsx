@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Box, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Project, Session } from "@lab/client";
@@ -25,13 +27,32 @@ function SessionListRoot({ children }: { children: ReactNode }) {
 }
 
 function SessionListProject({ project, children }: { project: Project; children?: ReactNode }) {
+  const router = useRouter();
   const { data: sessions } = useSessions(project.id);
   const createSession = useCreateSession();
-  const [creationState] = useSessionCreation();
+  const [creationState, setCreationState] = useSessionCreation();
 
   const sessionCount = sessions?.length ?? 0;
   const isCreatingHere = creationState.isCreating && creationState.projectId === project.id;
   const showSkeleton = isCreatingHere && sessionCount === creationState.sessionCountAtCreation;
+
+  useEffect(() => {
+    if (!isCreatingHere || !sessions) return;
+    if (sessionCount <= creationState.sessionCountAtCreation) return;
+
+    const newSession = sessions[sessions.length - 1];
+    if (!newSession) return;
+
+    router.push(`/editor/${newSession.id}/chat`);
+    setCreationState({ isCreating: false, projectId: null, sessionCountAtCreation: 0 });
+  }, [
+    isCreatingHere,
+    sessions,
+    sessionCount,
+    creationState.sessionCountAtCreation,
+    router,
+    setCreationState,
+  ]);
 
   const handleAddSession = (event: React.MouseEvent) => {
     event.stopPropagation();
