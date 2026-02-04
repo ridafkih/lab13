@@ -10,6 +10,7 @@ import {
   getContainersTool,
   createCreateSessionTool,
   createSendMessageToSessionTool,
+  createGetSessionScreenshotTool,
 } from "./tools";
 import { buildChatOrchestratorPrompt } from "./prompts/chat-orchestrator";
 import type { BrowserService } from "../browser/browser-service";
@@ -26,11 +27,19 @@ export interface ChatOrchestratorInput {
 
 export type ChatOrchestratorAction = "response" | "created_session" | "forwarded_message";
 
+export interface MessageAttachment {
+  type: "image";
+  data: string;
+  encoding: "base64";
+  format: string;
+}
+
 export interface ChatOrchestratorResult {
   action: ChatOrchestratorAction;
   message: string;
   sessionId?: string;
   projectName?: string;
+  attachments?: MessageAttachment[];
 }
 
 interface ChatModelConfig {
@@ -72,6 +81,7 @@ interface SessionInfo {
   sessionId?: string;
   projectName?: string;
   wasForwarded?: boolean;
+  attachments: MessageAttachment[];
 }
 
 function isSessionCreationOutput(
@@ -98,31 +108,66 @@ function isMessageForwardedOutput(
   );
 }
 
+interface ScreenshotData {
+  data: string;
+  encoding: "base64";
+  format: string;
+}
+
+function isScreenshotOutput(
+  value: unknown,
+): value is { hasScreenshot: true; screenshot: ScreenshotData } {
+  if (typeof value !== "object" || value === null) return false;
+  if (!("hasScreenshot" in value) || value.hasScreenshot !== true) return false;
+  if (!("screenshot" in value)) return false;
+
+  const screenshot = value.screenshot;
+  if (typeof screenshot !== "object" || screenshot === null) return false;
+  return (
+    "data" in screenshot &&
+    typeof screenshot.data === "string" &&
+    "encoding" in screenshot &&
+    screenshot.encoding === "base64" &&
+    "format" in screenshot &&
+    typeof screenshot.format === "string"
+  );
+}
+
 function extractSessionInfoFromSteps<T extends { toolResults?: Array<{ output: unknown }> }>(
   steps: T[],
 ): SessionInfo {
+  const attachments: MessageAttachment[] = [];
+  let sessionId: string | undefined;
+  let projectName: string | undefined;
+  let wasForwarded: boolean | undefined;
+
   for (const step of steps) {
     if (!step.toolResults) continue;
 
     for (const toolResult of step.toolResults) {
       if (isSessionCreationOutput(toolResult.output)) {
-        return {
-          sessionId: toolResult.output.sessionId,
-          projectName: toolResult.output.projectName,
-          wasForwarded: false,
-        };
+        sessionId = toolResult.output.sessionId;
+        projectName = toolResult.output.projectName;
+        wasForwarded = false;
       }
 
       if (isMessageForwardedOutput(toolResult.output)) {
-        return {
-          sessionId: toolResult.output.sessionId,
-          wasForwarded: true,
-        };
+        sessionId = toolResult.output.sessionId;
+        wasForwarded = true;
+      }
+
+      if (isScreenshotOutput(toolResult.output)) {
+        attachments.push({
+          type: "image",
+          data: toolResult.output.screenshot.data,
+          encoding: toolResult.output.screenshot.encoding,
+          format: toolResult.output.screenshot.format,
+        });
       }
     }
   }
 
-  return {};
+  return { sessionId, projectName, wasForwarded, attachments };
 }
 
 export async function chatOrchestrate(
@@ -140,6 +185,10 @@ export async function chatOrchestrate(
     modelId: input.modelId,
   });
 
+  const getSessionScreenshotTool = createGetSessionScreenshotTool({
+    browserService: input.browserService,
+  });
+
   const tools = {
     listProjects: listProjectsTool,
     listSessions: listSessionsTool,
@@ -149,6 +198,7 @@ export async function chatOrchestrate(
     getContainers: getContainersTool,
     createSession: createSessionTool,
     sendMessageToSession: sendMessageToSessionTool,
+    getSessionScreenshot: getSessionScreenshotTool,
   };
 
   const systemPrompt = buildChatOrchestratorPrompt({
@@ -165,13 +215,14 @@ export async function chatOrchestrate(
     stopWhen: stepCountIs(5),
   });
 
-  const { sessionId, projectName, wasForwarded } = extractSessionInfoFromSteps(steps);
+  const { sessionId, projectName, wasForwarded, attachments } = extractSessionInfoFromSteps(steps);
 
   if (sessionId && wasForwarded) {
     return {
       action: "forwarded_message",
       message: text || "Message sent to the session.",
       sessionId,
+      attachments: attachments.length > 0 ? attachments : undefined,
     };
   }
 
@@ -181,11 +232,13 @@ export async function chatOrchestrate(
       message: text || `Started working on your task in ${projectName ?? "the project"}.`,
       sessionId,
       projectName,
+      attachments: attachments.length > 0 ? attachments : undefined,
     };
   }
 
   return {
     action: "response",
     message: text,
+    attachments: attachments.length > 0 ? attachments : undefined,
   };
 }

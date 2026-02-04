@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "bun --hot src/index.ts",
+    "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "types": "tsc --noEmit",
     "lint": "oxlint",

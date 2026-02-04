@@ -9,3 +9,7 @@ export {
   createSendMessageToSessionTool,
   type SendMessageToolContext,
 } from "./send-message-to-session";
+export {
+  createGetSessionScreenshotTool,
+  type GetSessionScreenshotToolContext,
+} from "./get-session-screenshot";

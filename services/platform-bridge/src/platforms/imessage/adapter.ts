@@ -1,6 +1,10 @@
 import { IMessageSDK, type Message } from "@photon-ai/imessage-kit";
+import { writeFile, unlink, mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
 import type { PlatformAdapter, MessageHandler } from "../types";
-import type { OutgoingPlatformMessage } from "../../types/messages";
+import type { OutgoingPlatformMessage, MessageAttachment } from "../../types/messages";
 import { config } from "../../config/environment";
 
 export class IMessageAdapter implements PlatformAdapter {
@@ -106,10 +110,49 @@ export class IMessageAdapter implements PlatformAdapter {
       throw new Error("iMessage adapter not initialized");
     }
 
-    // The chatId for iMessage is typically the phone number or email
-    // The SDK expects (to, content) format
-    await this.sdk.send(message.chatId, message.content);
-    console.log(`[iMessage] Sent message to ${message.chatId}`);
+    const attachmentPaths: string[] = [];
+
+    try {
+      if (message.attachments && message.attachments.length > 0) {
+        for (const attachment of message.attachments) {
+          const filePath = await this.writeAttachmentToTempFile(attachment);
+          attachmentPaths.push(filePath);
+        }
+      }
+
+      if (attachmentPaths.length > 0) {
+        await this.sdk.send(message.chatId, {
+          text: message.content || undefined,
+          images: attachmentPaths,
+        });
+      } else {
+        await this.sdk.send(message.chatId, message.content);
+      }
+
+      console.log(`[iMessage] Sent message to ${message.chatId}`);
+    } finally {
+      for (const filePath of attachmentPaths) {
+        try {
+          await unlink(filePath);
+        } catch {
+          console.warn(`[iMessage] Failed to clean up temp file: ${filePath}`);
+        }
+      }
+    }
+  }
+
+  private async writeAttachmentToTempFile(attachment: MessageAttachment): Promise<string> {
+    const tempDir = join(tmpdir(), "lab-imessage-attachments");
+    await mkdir(tempDir, { recursive: true });
+
+    const extension = attachment.format === "png" ? "png" : attachment.format;
+    const fileName = `${randomUUID()}.${extension}`;
+    const filePath = join(tempDir, fileName);
+
+    const buffer = Buffer.from(attachment.data, attachment.encoding);
+    await writeFile(filePath, buffer);
+
+    return filePath;
   }
 
   shouldMonitor(chatId: string): boolean {

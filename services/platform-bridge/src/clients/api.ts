@@ -103,11 +103,40 @@ export class ApiClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: "Unknown error" }));
-      throw new Error(`Session complete notification failed: ${error.error || response.statusText}`);
+      throw new Error(
+        `Session complete notification failed: ${error.error || response.statusText}`,
+      );
     }
 
     return response.json();
   }
+
+  async getSessionScreenshot(sessionId: string): Promise<ScreenshotResult | null> {
+    const response = await fetch(`${this.baseUrl}/internal/sessions/${sessionId}/screenshot`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return response.json();
+  }
+}
+
+export interface ScreenshotResult {
+  sessionId: string;
+  timestamp: number;
+  format: string;
+  encoding: string;
+  data: string;
 }
 
 export interface SummaryResult {

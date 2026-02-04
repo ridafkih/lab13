@@ -15,11 +15,19 @@ export interface IncomingPlatformMessage {
   };
 }
 
+export interface MessageAttachment {
+  type: "image";
+  data: string;
+  encoding: "base64";
+  format: string;
+}
+
 export interface OutgoingPlatformMessage {
   platform: PlatformType;
   chatId: string;
   content: string;
   threadId?: string;
+  attachments?: MessageAttachment[];
 }
 
 export type MessagingMode = "active" | "passive";
@@ -64,4 +72,5 @@ export interface ChatResult {
   message: string;
   sessionId?: string;
   projectName?: string;
+  attachments?: MessageAttachment[];
 }

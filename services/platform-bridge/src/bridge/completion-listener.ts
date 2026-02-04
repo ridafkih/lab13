@@ -76,9 +76,13 @@ class CompletionListener {
         chatId,
         content: result.message,
         threadId,
+        attachments: result.attachments,
       });
 
-      console.log(`[CompletionListener] Sent completion summary to ${platform}:${chatId}`);
+      console.log(
+        `[CompletionListener] Sent completion summary to ${platform}:${chatId}` +
+          (result.attachments?.length ? ` with ${result.attachments.length} attachment(s)` : ""),
+      );
     } catch (error) {
       console.error(`[CompletionListener] Error processing completion for ${sessionId}:`, error);
     } finally {

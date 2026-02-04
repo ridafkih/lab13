@@ -47,7 +47,7 @@ const POST: RouteHandler = async (request, _params, context) => {
     const conversationHistory = history.map((msg) => `${msg.role}: ${msg.content}`);
 
     const result = await chatOrchestrate({
-      content: `Check session ${sessionId} and summarize what was accomplished.`,
+      content: `Session ${sessionId} has completed. Check what was accomplished and include a screenshot if appropriate.`,
       conversationHistory,
       platformOrigin,
       platformChatId,

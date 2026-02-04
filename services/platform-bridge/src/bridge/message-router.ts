@@ -57,6 +57,7 @@ export class MessageRouter {
         platform,
         chatId,
         content: result.message,
+        attachments: result.attachments,
       });
     }
   }
