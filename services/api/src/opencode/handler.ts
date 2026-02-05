@@ -6,7 +6,7 @@ import { getProjectSystemPrompt } from "../repositories/project.repository";
 import { resolveWorkspacePathBySession } from "../shared/path-resolver";
 import type { SessionStateStore } from "../state/session-state-store";
 import type { Publisher } from "../types/dependencies";
-import { setWideErrorFields, widelog } from "../logging";
+import { widelog } from "../logging";
 
 const PROMPT_ENDPOINTS = ["/session/", "/prompt", "/message"];
 const QUESTION_ENDPOINTS = ["/question/"];
@@ -280,19 +280,16 @@ export function createOpenCodeProxyHandler(deps: OpenCodeProxyDeps): OpenCodePro
     const upstreamAbort = new AbortController();
     request.signal.addEventListener("abort", () => upstreamAbort.abort(), { once: true });
 
-    let proxyResponse: Response;
-    try {
-      proxyResponse = await fetch(targetUrl, {
-        method: request.method,
-        headers: forwardHeaders,
-        body,
-        signal: upstreamAbort.signal,
-        ...(body ? { duplex: "half" } : {}),
-      });
-    } catch (error) {
-      setWideErrorFields(error, "opencode.upstream_error");
+    const proxyResponse = await fetch(targetUrl, {
+      method: request.method,
+      headers: forwardHeaders,
+      body,
+      signal: upstreamAbort.signal,
+      ...(body ? { duplex: "half" } : {}),
+    }).catch((error: unknown) => {
+      widelog.errorFields(error, { prefix: "opencode.upstream_error" });
       throw error;
-    }
+    });
 
     widelog.set("opencode.upstream_status_code", proxyResponse.status);
 

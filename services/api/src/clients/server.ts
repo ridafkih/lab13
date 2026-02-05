@@ -2,7 +2,7 @@ import { createPublisher, type WebSocketData } from "@lab/multiplayer-server";
 import { schema } from "@lab/multiplayer-sdk";
 import type { Server as BunServer } from "bun";
 import type { ImageStore } from "@lab/context";
-import { logger, setWideErrorFields } from "../logging";
+import { logger } from "../logging";
 import { SERVER } from "../config/constants";
 import { createWebSocketHandlers, type Auth } from "../websocket/websocket-handler";
 import { createOpenCodeProxyHandler } from "../opencode/handler";
@@ -261,7 +261,7 @@ export class ApiServer {
           error instanceof Error && status < 500 ? error.message : "Internal server error";
 
         this.setStatusOutcome(status);
-        setWideErrorFields(error);
+        widelog.errorFields(error);
 
         if (error instanceof AppError) {
           widelog.set("error.code", error.code);

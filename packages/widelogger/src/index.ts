@@ -9,6 +9,39 @@ export interface WideloggerOptions {
   transport: Transport;
 }
 
+export interface ErrorFieldsOptions {
+  prefix?: string;
+  includeStack?: boolean;
+}
+
+interface ParsedErrorFields {
+  error_name: string;
+  error_message: string;
+  error_stack?: string;
+}
+
+function getErrorFields(error: unknown, includeStack = true): ParsedErrorFields {
+  if (error instanceof Error) {
+    return {
+      error_name: error.name,
+      error_message: error.message,
+      error_stack: includeStack ? error.stack : undefined,
+    };
+  }
+
+  if (typeof error === "string") {
+    return {
+      error_name: "Error",
+      error_message: error,
+    };
+  }
+
+  return {
+    error_name: "UnknownError",
+    error_message: "Unknown error",
+  };
+}
+
 export const widelogger = (options: WideloggerOptions) => {
   const storage = new AsyncLocalStorage<Context>();
   const { transport } = options;
@@ -38,6 +71,22 @@ export const widelogger = (options: WideloggerOptions) => {
       stop: <K extends string>(key: DottedKey<K>) => {
         getContext()?.operations.push({ operation: "time.stop", key, time: performance.now() });
       },
+    },
+    errorFields: (error: unknown, options: ErrorFieldsOptions = {}) => {
+      const context = getContext();
+      if (!context) return;
+
+      const prefix = options.prefix ?? "error";
+      const fields = getErrorFields(error, options.includeStack ?? true);
+
+      for (const [field, value] of Object.entries(fields)) {
+        if (typeof value === "undefined") continue;
+        context.operations.push({
+          operation: "set",
+          key: `${prefix}.${field}`,
+          value,
+        });
+      }
     },
     flush: () => {
       const event = flushContext(getContext());

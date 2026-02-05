@@ -36,34 +36,6 @@ export const logger = pino(
   transport,
 );
 
-interface ErrorFields {
-  error_name: string;
-  error_message: string;
-  error_stack?: string;
-}
-
-export function getErrorFields(error: unknown): ErrorFields {
-  if (error instanceof Error) {
-    return {
-      error_name: error.name,
-      error_message: error.message,
-      error_stack: error.stack,
-    };
-  }
-
-  if (typeof error === "string") {
-    return {
-      error_name: "Error",
-      error_message: error,
-    };
-  }
-
-  return {
-    error_name: "UnknownError",
-    error_message: "Unknown error",
-  };
-}
-
 const { widelog } = widelogger({
   transport: (event) => {
     if (Object.keys(event).length === 0) return;
@@ -82,12 +54,3 @@ const { widelog } = widelogger({
 });
 
 export { widelog };
-
-export function setWideErrorFields(error: unknown, prefix = "error"): void {
-  const fields = getErrorFields(error);
-
-  for (const [field, value] of Object.entries(fields)) {
-    if (typeof value === "undefined") continue;
-    widelog.set(`${prefix}.${field}` as `${string}`, value);
-  }
-}

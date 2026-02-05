@@ -13,6 +13,7 @@ import { getPlatformConfig } from "../../config/platforms";
 import { buildSseResponse } from "@lab/http-utilities";
 import { parseRequestBody } from "../../shared/validation";
 import { MESSAGE_ROLE } from "../../types/message";
+import { widelog } from "../../logging";
 
 const chatRequestSchema = z.object({
   content: z.string().min(1),
@@ -133,7 +134,8 @@ function createSseStream(
 
         controller.close();
       } catch (error) {
-        console.error("[ChatOrchestrate] Stream error:", error);
+        widelog.errorFields(error, { prefix: "orchestration.stream_error" });
+        widelog.set("orchestration.stream_outcome", "error");
         const errorMessage = error instanceof Error ? error.message : "Stream failed";
         const errorEvent = `event: error\ndata: ${JSON.stringify({ error: errorMessage })}\n\n`;
         controller.enqueue(encoder.encode(errorEvent));
