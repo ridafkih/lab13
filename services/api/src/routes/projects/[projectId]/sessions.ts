@@ -15,7 +15,7 @@ const GET = withParams<{ projectId: string }>(["projectId"], async ({ projectId 
   return Response.json(sessions);
 });
 
-type OrchestrationContext = RouteContextFor<"browser" | "session" | "infra">;
+type OrchestrationContext = RouteContextFor<"browser" | "session" | "infra" | "proxy">;
 
 const POST = withParams<{ projectId: string }, OrchestrationContext>(
   ["projectId"],
@@ -29,6 +29,7 @@ const POST = withParams<{ projectId: string }, OrchestrationContext>(
       sessionLifecycle: context.sessionLifecycle,
       poolManager: context.poolManager,
       publisher: context.publisher,
+      proxyBaseDomain: context.proxyBaseDomain,
     });
 
     return Response.json(

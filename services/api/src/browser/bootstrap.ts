@@ -75,10 +75,7 @@ async function waitForService(
     if (response) {
       lastStatus = response.status;
       if (response.ok) {
-        const contentLength = response.headers.get("content-length");
-        if (contentLength && parseInt(contentLength, 10) > 0) {
-          return;
-        }
+        return;
       }
     }
     await Bun.sleep(intervalMs);

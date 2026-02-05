@@ -5,6 +5,8 @@ import {
   createSessionContainer,
   getSessionContainersWithDetails,
 } from "../repositories/container-session.repository";
+import { findPortsByContainerId } from "../repositories/container-port.repository";
+import { formatProxyUrl } from "../shared/naming";
 import type { BrowserServiceManager } from "../managers/browser-service.manager";
 import type { SessionLifecycleManager } from "../managers/session-lifecycle.manager";
 import type { PoolManager } from "../managers/pool.manager";
@@ -20,6 +22,7 @@ export interface SpawnSessionOptions {
   sessionLifecycle: SessionLifecycleManager;
   poolManager: PoolManager;
   publisher: Publisher;
+  proxyBaseDomain?: string;
 }
 
 export interface SpawnSessionResult {
@@ -70,6 +73,22 @@ function publishSessionCreated(
   publisher.publishSnapshot("sessionContainers", { uuid: session.id }, containers);
 }
 
+async function buildContainerUrls(
+  sessionId: string,
+  containerId: string,
+  proxyBaseDomain?: string,
+): Promise<Array<{ port: number; url: string }>> {
+  if (!proxyBaseDomain) {
+    return [];
+  }
+
+  const ports = await findPortsByContainerId(containerId);
+  return ports.map(({ port }) => ({
+    port,
+    url: formatProxyUrl(sessionId, port, proxyBaseDomain),
+  }));
+}
+
 function scheduleBackgroundWork(
   sessionId: string,
   projectId: string,
@@ -95,6 +114,7 @@ async function claimAndPreparePooledSession(
   projectId: string,
   poolManager: PoolManager,
   publisher: Publisher,
+  proxyBaseDomain?: string,
 ): Promise<SpawnSessionResult | null> {
   const pooledSession = await poolManager.claimPooledSession(projectId);
   if (!pooledSession) {
@@ -102,12 +122,22 @@ async function claimAndPreparePooledSession(
   }
 
   const existingContainers = await getSessionContainersWithDetails(pooledSession.id);
-  const containers: ContainerRow[] = existingContainers.map((container) => ({
-    id: container.id,
-    name: extractContainerDisplayName(container),
-    status: validateContainerStatus(container.status),
-    urls: [],
-  }));
+  const containers: ContainerRow[] = await Promise.all(
+    existingContainers.map(async (container) => {
+      const urls = await buildContainerUrls(
+        pooledSession.id,
+        container.containerId,
+        proxyBaseDomain,
+      );
+
+      return {
+        id: container.id,
+        name: extractContainerDisplayName(container),
+        status: validateContainerStatus(container.status),
+        urls,
+      };
+    }),
+  );
 
   publishSessionCreated(pooledSession, containers, publisher);
   return { session: pooledSession, containers };
@@ -116,6 +146,7 @@ async function claimAndPreparePooledSession(
 async function createSessionWithContainers(
   projectId: string,
   publisher: Publisher,
+  proxyBaseDomain?: string,
 ): Promise<SpawnSessionResult> {
   const containerDefinitions = await findContainersByProjectId(projectId);
   if (containerDefinitions.length === 0) {
@@ -133,11 +164,13 @@ async function createSessionWithContainers(
       status: CONTAINER_STATUS.STARTING,
     });
 
+    const urls = await buildContainerUrls(session.id, definition.id, proxyBaseDomain);
+
     containers.push({
       id: sessionContainer.id,
       name: extractContainerDisplayName(definition),
       status: CONTAINER_STATUS.STARTING,
-      urls: [],
+      urls,
     });
   }
 
@@ -146,15 +179,21 @@ async function createSessionWithContainers(
 }
 
 export async function spawnSession(options: SpawnSessionOptions): Promise<SpawnSessionResult> {
-  const { projectId, taskSummary, sessionLifecycle, poolManager, publisher } = options;
+  const { projectId, taskSummary, sessionLifecycle, poolManager, publisher, proxyBaseDomain } =
+    options;
 
-  const pooledResult = await claimAndPreparePooledSession(projectId, poolManager, publisher);
+  const pooledResult = await claimAndPreparePooledSession(
+    projectId,
+    poolManager,
+    publisher,
+    proxyBaseDomain,
+  );
   if (pooledResult) {
     scheduleBackgroundTitleGeneration(pooledResult.session.id, taskSummary, publisher);
     return pooledResult;
   }
 
-  const result = await createSessionWithContainers(projectId, publisher);
+  const result = await createSessionWithContainers(projectId, publisher, proxyBaseDomain);
   scheduleBackgroundWork(result.session.id, projectId, sessionLifecycle, poolManager, publisher);
   scheduleBackgroundTitleGeneration(result.session.id, taskSummary, publisher);
   return result;

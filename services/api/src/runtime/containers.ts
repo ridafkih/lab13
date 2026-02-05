@@ -2,7 +2,9 @@ import { formatUniqueHostname } from "../shared/naming";
 import { findContainersWithDependencies } from "../repositories/container-dependency.repository";
 import {
   updateSessionContainerRuntimeId,
+  updateSessionContainerStatus,
   updateSessionContainersStatusBySessionId,
+  findSessionContainerByRuntimeId,
 } from "../repositories/container-session.repository";
 import { CircularDependencyError } from "@lab/sandbox-sdk";
 import { findSessionById } from "../repositories/session.repository";
@@ -41,10 +43,10 @@ async function createAndStartContainer(
   projectId: string,
   networkId: string,
   prepared: PreparedContainer,
-  deps: Pick<InitializeSessionContainersDeps, "sandbox">,
+  deps: Pick<InitializeSessionContainersDeps, "sandbox" | "publisher">,
 ): Promise<{ runtimeId: string; clusterContainer: ClusterContainer | null }> {
   const { containerDefinition, ports, envVars, containerWorkspace } = prepared;
-  const { sandbox } = deps;
+  const { sandbox, publisher } = deps;
 
   const env = buildEnvironmentVariables(sessionId, envVars);
   const uniqueHostname = formatUniqueHostname(sessionId, containerDefinition.id);
@@ -70,6 +72,15 @@ async function createAndStartContainer(
   console.log(`[Container] Created and started ${runtimeId}`);
 
   await updateSessionContainerRuntimeId(sessionId, containerDefinition.id, runtimeId);
+  const sessionContainer = await findSessionContainerByRuntimeId(runtimeId);
+  if (sessionContainer) {
+    await updateSessionContainerStatus(sessionContainer.id, CONTAINER_STATUS.RUNNING);
+    publisher.publishDelta(
+      "sessionContainers",
+      { uuid: sessionId },
+      { type: "update", container: { id: sessionContainer.id, status: CONTAINER_STATUS.RUNNING } },
+    );
+  }
 
   const clusterContainer =
     Object.keys(portMap).length > 0
@@ -85,7 +96,7 @@ async function startContainersInLevel(
   networkId: string,
   containerIds: string[],
   preparedByContainerId: Map<string, PreparedContainer>,
-  deps: Pick<InitializeSessionContainersDeps, "sandbox">,
+  deps: Pick<InitializeSessionContainersDeps, "sandbox" | "publisher">,
 ): Promise<{ runtimeIds: string[]; clusterContainers: ClusterContainer[] }> {
   const levelRuntimeIds: string[] = [];
   const levelClusterContainers: ClusterContainer[] = [];
