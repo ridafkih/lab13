@@ -4,6 +4,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
 const setNested = (target: Record<string, unknown>, key: string, value: unknown) => {
+  if (!key.includes(".")) {
+    target[key] = value;
+    return;
+  }
+
   const parts = key.split(".");
   const lastPart = parts.pop();
   if (lastPart === undefined) return;
@@ -27,17 +32,17 @@ const setNested = (target: Record<string, unknown>, key: string, value: unknown)
 export const flush = (context: Context | undefined): Record<string, unknown> => {
   if (!context) return {};
 
-  const fields: Record<string, FieldValue> = {};
-  const counters: Record<string, number> = {};
-  const arrays: Record<string, FieldValue[]> = {};
-  const maxValues: Record<string, number> = {};
-  const minValues: Record<string, number> = {};
-  const timers: Record<string, { start: number; accumulated: number }> = {};
+  const event: Record<string, unknown> = Object.create(null);
+  const counters: Record<string, number> = Object.create(null);
+  const arrays: Record<string, FieldValue[]> = Object.create(null);
+  const maxValues: Record<string, number> = Object.create(null);
+  const minValues: Record<string, number> = Object.create(null);
+  const timers: Record<string, { start: number; accumulated: number }> = Object.create(null);
 
   for (const entry of context.operations) {
     switch (entry.operation) {
       case "set":
-        fields[entry.key] = entry.value;
+        setNested(event, entry.key, entry.value);
         break;
       case "count":
         counters[entry.key] = (counters[entry.key] ?? 0) + entry.amount;
@@ -45,20 +50,25 @@ export const flush = (context: Context | undefined): Record<string, unknown> => 
       case "append":
         (arrays[entry.key] ??= []).push(entry.value);
         break;
-      case "max":
-        if (maxValues[entry.key] === undefined || entry.value > maxValues[entry.key]!) {
+      case "max": {
+        const current = maxValues[entry.key];
+        if (current === undefined || entry.value > current) {
           maxValues[entry.key] = entry.value;
         }
         break;
-      case "min":
-        if (minValues[entry.key] === undefined || entry.value < minValues[entry.key]!) {
+      }
+      case "min": {
+        const current = minValues[entry.key];
+        if (current === undefined || entry.value < current) {
           minValues[entry.key] = entry.value;
         }
         break;
-      case "time.start":
-        timers[entry.key] ??= { start: 0, accumulated: 0 };
-        timers[entry.key]!.start = entry.time;
+      }
+      case "time.start": {
+        const timer = (timers[entry.key] ??= { start: 0, accumulated: 0 });
+        timer.start = entry.time;
         break;
+      }
       case "time.stop": {
         const timer = timers[entry.key];
         if (timer && timer.start > 0) {
@@ -70,25 +80,13 @@ export const flush = (context: Context | undefined): Record<string, unknown> => 
     }
   }
 
-  const event: Record<string, unknown> = Object.create(null);
-
-  for (const [key, value] of Object.entries(fields)) {
-    setNested(event, key, value);
-  }
-  for (const [key, value] of Object.entries(counters)) {
-    setNested(event, key, value);
-  }
-  for (const [key, value] of Object.entries(arrays)) {
-    setNested(event, key, value);
-  }
-  for (const [key, value] of Object.entries(maxValues)) {
-    setNested(event, key, value);
-  }
-  for (const [key, value] of Object.entries(minValues)) {
-    setNested(event, key, value);
-  }
-  for (const [key, timer] of Object.entries(timers)) {
-    setNested(event, key, Math.round(timer.accumulated * 100) / 100);
+  for (const key in counters) setNested(event, key, counters[key]);
+  for (const key in arrays) setNested(event, key, arrays[key]);
+  for (const key in maxValues) setNested(event, key, maxValues[key]);
+  for (const key in minValues) setNested(event, key, minValues[key]);
+  for (const key in timers) {
+    const timer = timers[key];
+    if (timer) setNested(event, key, Math.round(timer.accumulated * 100) / 100);
   }
 
   context.operations.length = 0;
