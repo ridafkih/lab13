@@ -397,9 +397,9 @@ function ToolPreviewCard({ tool }: { tool: MockTool }) {
       </div>
       <div className="bg-bg">
         {(() => {
-          const example = tool.examples[expandedExample];
-          const Renderer = getToolRenderer(example.props.tool);
-          return <Renderer {...example.props} />;
+          const example = tool.examples[expandedExample]!;
+          const Renderer = getToolRenderer(example!.props.tool);
+          return <Renderer {...example!.props} />;
         })()}
       </div>
     </div>

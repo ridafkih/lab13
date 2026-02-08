@@ -80,7 +80,7 @@ function ContainerLogsProvider({
 
   useEffect(() => {
     if (sources.length > 0 && (!activeTab || !sources.find((s) => s.id === activeTab))) {
-      setActiveTab(sources[0].id);
+      setActiveTab(sources[0]!.id);
     } else if (sources.length === 0) {
       setActiveTab(null);
     }

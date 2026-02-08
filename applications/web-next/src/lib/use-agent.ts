@@ -429,7 +429,7 @@ export function useAgent(labSessionId: string): UseAgentResult {
     );
 
     try {
-      const [providerID, modelID] = modelId?.split("/") ?? [];
+      const [providerID = "", modelID = ""] = modelId?.split("/") ?? [];
       const parts = buildMessageParts(content, attachments);
 
       const response = await opencodeClient.session.promptAsync({

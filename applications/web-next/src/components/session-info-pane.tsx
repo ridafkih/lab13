@@ -125,7 +125,7 @@ function SessionInfoPaneFileItem({
       </span>
       {status && (
         <span className={cn(text({ color: statusColor[status] }), "shrink-0")}>
-          {status[0].toUpperCase()}
+          {status[0]!.toUpperCase()}
         </span>
       )}
     </button>

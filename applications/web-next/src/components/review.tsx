@@ -543,7 +543,7 @@ function reconstructOldContent(newContent: string, patch: Patch): string {
 
   for (const hunk of patch.hunks) {
     while (newLineIndex < hunk.newStart - 1) {
-      oldLines.push(newLines[newLineIndex]);
+      oldLines.push(newLines[newLineIndex]!);
       newLineIndex++;
     }
 
@@ -556,14 +556,14 @@ function reconstructOldContent(newContent: string, patch: Patch): string {
       } else if (prefix === "+") {
         newLineIndex++;
       } else {
-        oldLines.push(newLines[newLineIndex]);
+        oldLines.push(newLines[newLineIndex]!);
         newLineIndex++;
       }
     }
   }
 
   while (newLineIndex < newLines.length) {
-    oldLines.push(newLines[newLineIndex]);
+    oldLines.push(newLines[newLineIndex]!);
     newLineIndex++;
   }
 
