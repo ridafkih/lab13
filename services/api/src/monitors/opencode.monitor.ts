@@ -155,7 +155,7 @@ class SessionTracker {
   }
 
   private async handleMessageUpdate(text: string | null): Promise<void> {
-    this.completionTimerManager.cancelCompletion(this.labSessionId);
+    this.completionTimerManager.clearSession(this.labSessionId);
     await this.sessionStateStore.setInferenceStatus(this.labSessionId, INFERENCE_STATUS.GENERATING);
     if (text) {
       await this.sessionStateStore.setLastMessage(this.labSessionId, text);
