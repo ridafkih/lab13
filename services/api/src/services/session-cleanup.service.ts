@@ -63,14 +63,20 @@ export class SessionCleanupService {
           await proxyManager.unregisterCluster(sessionId);
         } catch (error) {
           widelog.count("error_count");
-          widelog.set("errors.unregister_proxy_cluster", error instanceof Error ? error.message : String(error));
+          widelog.set(
+            "errors.unregister_proxy_cluster",
+            error instanceof Error ? error.message : String(error),
+          );
         }
 
         try {
           await cleanupSessionNetwork(sessionId);
         } catch (error) {
           widelog.count("error_count");
-          widelog.set("errors.network_cleanup", error instanceof Error ? error.message : String(error));
+          widelog.set(
+            "errors.network_cleanup",
+            error instanceof Error ? error.message : String(error),
+          );
         }
 
         await deleteSession(sessionId);
@@ -107,14 +113,20 @@ export class SessionCleanupService {
           await proxyManager.unregisterCluster(sessionId);
         } catch (error) {
           widelog.count("error_count");
-          widelog.set("errors.unregister_proxy_cluster", error instanceof Error ? error.message : String(error));
+          widelog.set(
+            "errors.unregister_proxy_cluster",
+            error instanceof Error ? error.message : String(error),
+          );
         }
 
         try {
           await cleanupSessionNetwork(sessionId);
         } catch (error) {
           widelog.count("error_count");
-          widelog.set("errors.network_cleanup", error instanceof Error ? error.message : String(error));
+          widelog.set(
+            "errors.network_cleanup",
+            error instanceof Error ? error.message : String(error),
+          );
         }
 
         widelog.set("outcome", "success");
@@ -157,7 +169,10 @@ export class SessionCleanupService {
           await cleanupSessionNetwork(sessionId);
         } catch (error) {
           widelog.count("error_count");
-          widelog.set("errors.network_cleanup", error instanceof Error ? error.message : String(error));
+          widelog.set(
+            "errors.network_cleanup",
+            error instanceof Error ? error.message : String(error),
+          );
         }
 
         await deleteSession(sessionId);
@@ -200,9 +215,15 @@ export class SessionCleanupService {
     for (const failure of fulfilledResults.filter((r) => !r.success)) {
       widelog.count("error_count");
       if (failure.error) {
-        widelog.set(`errors.container_cleanup.${failure.runtimeId}`, failure.error instanceof Error ? failure.error.message : String(failure.error));
+        widelog.set(
+          `errors.container_cleanup.${failure.runtimeId}`,
+          failure.error instanceof Error ? failure.error.message : String(failure.error),
+        );
       } else if (failure.stillExists) {
-        widelog.set(`errors.container_still_exists.${failure.runtimeId}`, "container still exists after stop and remove");
+        widelog.set(
+          `errors.container_still_exists.${failure.runtimeId}`,
+          "container still exists after stop and remove",
+        );
       }
     }
   }

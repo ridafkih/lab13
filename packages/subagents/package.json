@@ -33,17 +33,17 @@
     "format": "oxfmt ."
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.35",
-    "@ai-sdk/openai": "^3.0.25",
+    "@ai-sdk/anthropic": "^3.0.38",
+    "@ai-sdk/openai": "^3.0.26",
     "@lab/browser-protocol": "workspace:*",
-    "ai": "^6.0.67",
+    "ai": "^6.0.77",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@lab/typescript-config": "workspace:*",
-    "bun-types": "^1.2.11",
-    "oxfmt": "0.27.0",
-    "oxlint": "1.42.0",
+    "@types/bun": "^1.3.8",
+    "oxfmt": "0.28.0",
+    "oxlint": "1.43.0",
     "typescript": "^5"
   }
 }

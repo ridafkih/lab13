@@ -197,29 +197,29 @@ const createSocketServer = (
     socket.on("error", () => {});
   });
 
-  server.listen(socketPath, () => {
-    self.postMessage({
-      type: "log",
-      data: {
-        level: "info",
-        event_name: "daemon_worker.socket_listening",
-        session_id: sessionId,
-        socket_path: socketPath,
-      },
+  server
+    .listen(socketPath, () => {
+      self.postMessage({
+        type: "log",
+        data: {
+          level: "info",
+          event_name: "daemon_worker.socket_listening",
+          session_id: sessionId,
+          socket_path: socketPath,
+        },
+      });
+    })
+    .on("error", (err) => {
+      self.postMessage({
+        type: "log",
+        data: {
+          level: "error",
+          event_name: "daemon_worker.socket_error",
+          session_id: sessionId,
+          error: err.message,
+        },
+      });
     });
-  });
-
-  server.on("error", (err) => {
-    self.postMessage({
-      type: "log",
-      data: {
-        level: "error",
-        event_name: "daemon_worker.socket_error",
-        session_id: sessionId,
-        error: err instanceof Error ? err.message : String(err),
-      },
-    });
-  });
 
   return server;
 };

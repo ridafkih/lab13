@@ -257,7 +257,10 @@ export class PoolManager {
               sessionsCreated++;
             } else {
               widelog.count("error_count");
-              widelog.set(`errors.fill_attempt_${i}`, `creation failed, consecutive_failures=${consecutiveFailures}`);
+              widelog.set(
+                `errors.fill_attempt_${i}`,
+                `creation failed, consecutive_failures=${consecutiveFailures}`,
+              );
             }
           } else {
             const drained = await this.drainExcess(projectId, currentSize - targetSize);

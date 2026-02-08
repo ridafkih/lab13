@@ -20,9 +20,10 @@
   },
   "devDependencies": {
     "@lab/typescript-config": "workspace:*",
-    "@types/dockerode": "^3.3.34",
-    "oxfmt": "0.27.0",
-    "oxlint": "1.42.0",
+    "@types/bun": "^1.3.8",
+    "@types/dockerode": "^4.0.1",
+    "oxfmt": "0.28.0",
+    "oxlint": "1.43.0",
     "typescript": "^5"
   }
 }

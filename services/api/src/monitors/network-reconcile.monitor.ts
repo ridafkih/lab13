@@ -62,7 +62,10 @@ export class NetworkReconcileMonitor {
             containersConnected += result.connected;
           } catch (error) {
             widelog.count("error_count");
-            widelog.set(`errors.${containerName}`, error instanceof Error ? error.message : String(error));
+            widelog.set(
+              `errors.${containerName}`,
+              error instanceof Error ? error.message : String(error),
+            );
           }
         }
 
