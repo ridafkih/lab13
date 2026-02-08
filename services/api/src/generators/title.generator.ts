@@ -26,7 +26,7 @@ export async function generateSessionTitle(options: GenerateTitleOptions): Promi
     widelog.time.start("duration_ms");
 
     try {
-      const config = readModelConfig("ORCHESTRATOR_MODEL");
+      const config = readModelConfig("orchestrator");
       const model = createLanguageModel(config);
       const prompt = buildPrompt(userMessage);
 

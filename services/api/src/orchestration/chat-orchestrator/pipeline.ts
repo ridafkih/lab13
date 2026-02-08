@@ -22,7 +22,7 @@ interface PreparedOrchestration {
 export async function prepareOrchestration(
   input: ChatOrchestratorInput,
 ): Promise<PreparedOrchestration> {
-  const modelConfig = readModelConfig("CHAT_ORCHESTRATOR_MODEL");
+  const modelConfig = readModelConfig("chatOrchestrator");
   const model = createLanguageModel(modelConfig);
   const vision = await getVisionContext();
 
