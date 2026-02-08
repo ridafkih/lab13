@@ -60,7 +60,7 @@
     "services/proxy": {
       "project": ["src/**/*.ts"]
     },
-    "applications/web-next": {
+    "applications/web": {
       "entry": ["src/app/**/page.tsx", "src/app/**/layout.tsx"],
       "project": ["src/**/*.{ts,tsx,css}", "*.config.{ts,mjs}"],
       "ignore": ["**/.next/**"]
