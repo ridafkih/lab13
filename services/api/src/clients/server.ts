@@ -257,10 +257,15 @@ export class ApiServer {
         });
         if (!session) {
           widelog.set("auth", "unauthorized");
-          return withCors(
+          const response = withCors(
             Response.json({ error: "Unauthorized" }, { status: 401 }),
             origin
           );
+          response.headers.append(
+            "Set-Cookie",
+            "better-auth.session_token=; Path=/; Max-Age=0"
+          );
+          return response;
         }
         widelog.set("auth.user_id", session.user.id);
       }
