@@ -11,17 +11,23 @@ interface MainOptions {
 type MainFunction = (options: MainOptions) => unknown;
 
 export const main = (({ env, extras }) => {
-  return widelog.context(async () => {
+  return widelog.context(() => {
     widelog.set("event_name", "mcp.startup");
     widelog.set("port", env.MCP_PORT);
 
     const { server, transport } = extras;
 
-    await server.connect(transport);
+    server.connect(transport);
 
     const httpServer = serve({
       port: env.MCP_PORT,
-      fetch: (request) => transport.handleRequest(request),
+      fetch(request) {
+        const url = new URL(request.url);
+        if (url.pathname === "/health") {
+          return new Response("OK", { status: 200 });
+        }
+        return transport.handleRequest(request);
+      },
     });
 
     widelog.flush();

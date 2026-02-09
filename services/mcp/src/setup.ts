@@ -33,7 +33,9 @@ export const setup = (async ({ env }) => {
   registerTool(container);
   registerTool(github);
 
-  const transport = new WebStandardStreamableHTTPServerTransport();
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: () => crypto.randomUUID(),
+  });
 
   return { server, transport };
 }) satisfies SetupFunction;
