@@ -12,7 +12,6 @@ import {
   type SessionStateStore,
 } from "../state/session-state-store";
 import type { Publisher } from "../types/dependencies";
-import { fetchSessionMessages } from "./acp-messages";
 
 interface InitiateAgentSessionOptions {
   sessionId: string;
@@ -30,8 +29,6 @@ interface InitiateConversationOptions extends InitiateAgentSessionOptions {
 }
 
 const SESSION_OPERATION_TIMEOUT_MS = 45_000;
-const RECOVERY_HISTORY_LIMIT = 12;
-const RECOVERY_PROMPT_CHAR_LIMIT = 6000;
 
 function getDefaultModelId(): string | undefined {
   return process.env.DEFAULT_CONVERSATION_MODEL_ID;
@@ -69,31 +66,6 @@ function isRecoverableSendError(error: unknown): boolean {
   );
 }
 
-function truncateText(value: string, maxChars: number): string {
-  if (value.length <= maxChars) {
-    return value;
-  }
-  return `${value.slice(0, maxChars)}…`;
-}
-
-function buildRecoveryPrompt(
-  messages: { role: string; content: string }[]
-): string {
-  const lines = messages.map((message) => {
-    const roleLabel = message.role === "assistant" ? "Assistant" : "User";
-    const compactContent = message.content.replace(/\s+/g, " ").trim();
-    return `${roleLabel}: ${compactContent}`;
-  });
-
-  const prompt = [
-    "Recovered conversation context (agent runtime restarted):",
-    ...lines,
-    "Continue from this context and do not claim that history is unavailable.",
-  ].join("\n");
-
-  return truncateText(prompt, RECOVERY_PROMPT_CHAR_LIMIT);
-}
-
 export async function initiateAgentSession(
   options: InitiateAgentSessionOptions
 ): Promise<string> {
@@ -101,8 +73,6 @@ export async function initiateAgentSession(
 
   const existing = await findSessionById(sessionId);
   const modelId = options.modelId ?? getDefaultModelId();
-  const isRuntimeReattach =
-    Boolean(existing?.sandboxSessionId) && !acp.hasSession(sessionId);
   const workspacePath =
     existing?.workspaceDirectory ??
     (await resolveWorkspacePathBySession(sessionId));
@@ -112,25 +82,13 @@ export async function initiateAgentSession(
   }
 
   const loadSessionId = existing?.sandboxSessionId ?? undefined;
-  let recoveredSystemPrompt = options.systemPrompt;
-
-  if (isRuntimeReattach) {
-    const history = await fetchSessionMessages(sessionId);
-    const recentHistory = history.slice(-RECOVERY_HISTORY_LIMIT);
-    if (recentHistory.length > 0) {
-      const recoveryPrompt = buildRecoveryPrompt(recentHistory);
-      recoveredSystemPrompt = options.systemPrompt
-        ? `${options.systemPrompt}\n\n${recoveryPrompt}`
-        : recoveryPrompt;
-    }
-  }
 
   try {
     const sandboxSessionId = await withTimeout(
       acp.createSession(sessionId, {
         cwd: workspacePath,
         model: modelId,
-        systemPrompt: recoveredSystemPrompt,
+        systemPrompt: options.systemPrompt,
         mcpServers: options.mcpServers,
         loadSessionId,
       }),

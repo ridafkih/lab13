@@ -81,6 +81,7 @@ interface ChatProviderProps {
   defaultModelId?: string;
   onSubmit?: (options: SubmitOptions) => void;
   onAbort?: () => void;
+  onModelChange?: (modelId: string) => void | Promise<void>;
 }
 
 function ChatProvider({
@@ -88,6 +89,7 @@ function ChatProvider({
   defaultModelId,
   onSubmit,
   onAbort,
+  onModelChange,
 }: ChatProviderProps) {
   const [modelId, setModelId] = useState(defaultModelId ?? null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -158,7 +160,10 @@ function ChatProvider({
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
       },
       getModelId: () => modelIdRef.current,
-      setModelId: (value: string) => setModelId(value),
+      setModelId: (value: string) => {
+        setModelId(value);
+        void onModelChange?.(value);
+      },
     };
   }
 

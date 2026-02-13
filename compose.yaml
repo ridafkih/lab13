@@ -41,6 +41,7 @@ services:
     init: true
     volumes:
       - session_workspaces:/workspaces
+      - claude_state:/home/agent/.claude
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       CLAUDE_CODE_OAUTH_CREDENTIALS: ${CLAUDE_CODE_OAUTH_CREDENTIALS:-}
@@ -349,6 +350,7 @@ volumes:
   redis_data:
   postgres_data:
   session_workspaces:
+  claude_state:
   browser_sockets:
   browser_profiles:
   rustfs_data:

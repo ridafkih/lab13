@@ -36,6 +36,7 @@ interface UseAgentResult {
   messages: MessageState[];
   error: Error | null;
   sendMessage: (options: SendMessageOptions) => Promise<void>;
+  setModel: (modelId: string) => Promise<void>;
   abortSession: () => Promise<void>;
   isSending: boolean;
   sessionStatus: SessionStatus;
@@ -460,6 +461,7 @@ export function useAgent(labSessionId: string): UseAgentResult {
   const lastReplayVersionRef = useRef<string>("");
   const lastProcessedSequenceRef = useRef<number>(-1);
   const pendingOptimisticByTextRef = useRef<Map<string, string[]>>(new Map());
+  const pendingModelUpdateRef = useRef<Promise<void> | null>(null);
 
   const isOptimistic = labSessionId === "new";
 
@@ -834,6 +836,9 @@ export function useAgent(labSessionId: string): UseAgentResult {
     };
 
     try {
+      if (pendingModelUpdateRef.current) {
+        await pendingModelUpdateRef.current;
+      }
       const activeSandboxSessionId = await ensureActiveSandboxSessionId();
 
       const apiUrl = getAgentApiUrl();
@@ -889,6 +894,38 @@ export function useAgent(labSessionId: string): UseAgentResult {
     }
   };
 
+  const setModel = async (modelId: string) => {
+    if (!(modelId && sandboxSessionId)) {
+      return;
+    }
+
+    const apiUrl = getAgentApiUrl();
+    const modelUpdatePromise = fetch(`${apiUrl}/acp/model`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Lab-Session-Id": labSessionId,
+      },
+      body: JSON.stringify({
+        sessionId: sandboxSessionId,
+        model: modelId,
+      }),
+    }).then((response) => {
+      if (!response.ok) {
+        throw new Error(`Failed to set model: ${response.status}`);
+      }
+    });
+
+    pendingModelUpdateRef.current = modelUpdatePromise;
+    try {
+      await modelUpdatePromise;
+    } finally {
+      if (pendingModelUpdateRef.current === modelUpdatePromise) {
+        pendingModelUpdateRef.current = null;
+      }
+    }
+  };
+
   const abortSession = async () => {
     if (!sandboxSessionId) {
       return;
@@ -915,6 +952,7 @@ export function useAgent(labSessionId: string): UseAgentResult {
     messages,
     error,
     sendMessage,
+    setModel,
     abortSession,
     isSending,
     sessionStatus,

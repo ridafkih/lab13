@@ -51,20 +51,28 @@ interface InitializedSession {
 }
 
 const SEND_MESSAGE_TIMEOUT_MS = 45_000;
+const MAX_SEND_MESSAGE_ATTEMPTS = 3;
 
 function isRecoverableAcpSendError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
   }
 
-  const message = error.message;
-  return (
-    message.includes("Request failed with status 500") ||
-    message.includes("Agent process exited") ||
-    message.includes("No session for server") ||
-    message.includes("Process stdin not available") ||
-    message.includes("timed out")
-  );
+  const message = error.message.toLowerCase();
+
+  const recoverablePatterns = [
+    "request failed with status 500",
+    "agent process exited",
+    "no session for server",
+    "process stdin not available",
+    "timed out",
+    "no conversation found",
+    "session not found",
+    "session did not end in result",
+    "processtransport is not ready for writing",
+  ];
+
+  return recoverablePatterns.some((pattern) => message.includes(pattern));
 }
 
 async function withTimeout<T>(
@@ -234,17 +242,29 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
   async function sendMessageWithRecovery(
     labSessionId: string,
     session: Session,
-    messageText: string
+    messageText: string,
+    modelId?: string
   ): Promise<void> {
     let currentSession = session;
 
-    for (let attemptIndex = 0; attemptIndex < 2; attemptIndex++) {
+    for (
+      let attemptIndex = 0;
+      attemptIndex < MAX_SEND_MESSAGE_ATTEMPTS;
+      attemptIndex++
+    ) {
       try {
         await withTimeout(
           ensureAcpSession(labSessionId, currentSession),
           SEND_MESSAGE_TIMEOUT_MS,
           "ACP session initialization"
         );
+        if (modelId) {
+          await withTimeout(
+            acp.setSessionModel(labSessionId, modelId),
+            SEND_MESSAGE_TIMEOUT_MS,
+            "ACP set session model"
+          );
+        }
         await withTimeout(
           acp.sendMessage(labSessionId, messageText),
           SEND_MESSAGE_TIMEOUT_MS,
@@ -252,7 +272,7 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
         );
         return;
       } catch (error) {
-        const isFinalAttempt = attemptIndex === 1;
+        const isFinalAttempt = attemptIndex === MAX_SEND_MESSAGE_ATTEMPTS - 1;
         if (isFinalAttempt || !isRecoverableAcpSendError(error)) {
           throw error;
         }
@@ -293,6 +313,7 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
       "POST /messages",
       (request, labSessionId) => handleSendMessage(request, labSessionId),
     ],
+    ["POST /model", (request, labSessionId) => handleSetModel(request, labSessionId)],
     ["POST /cancel", routeWithSession(handleCancelSession)],
     [
       "GET /events",
@@ -439,6 +460,7 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
     }
     const body = await safeJsonBody(request);
     const messageText = typeof body.message === "string" ? body.message : "";
+    const modelId = typeof body.model === "string" ? body.model.trim() : "";
 
     if (!messageText) {
       return corsResponse(JSON.stringify({ error: "Missing message" }), 400);
@@ -459,7 +481,8 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
       await sendMessageWithRecovery(
         validated.value,
         initialSession,
-        messageText
+        messageText,
+        modelId || undefined
       );
 
       await sessionStateStore.setLastMessage(validated.value, messageText);
@@ -484,6 +507,45 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
       const message = error instanceof Error ? error.message : "Unknown error";
       return corsResponse(
         JSON.stringify({ error: `Failed to send message: ${message}` }),
+        500
+      );
+    }
+  }
+
+  async function handleSetModel(
+    request: Request,
+    labSessionId: string | null
+  ): Promise<Response> {
+    const validated = requireLabSessionId(labSessionId);
+    if (!validated.ok) {
+      return validated.response;
+    }
+
+    const session = await findSessionById(validated.value);
+    if (!session) {
+      return corsResponse(JSON.stringify({ error: "Session not found" }), 404);
+    }
+
+    const body = await safeJsonBody(request);
+    const model =
+      typeof body.model === "string" ? body.model.trim() : "";
+
+    if (!model) {
+      return corsResponse(JSON.stringify({ error: "Missing model" }), 400);
+    }
+
+    try {
+      await withTimeout(
+        ensureAcpSession(validated.value, session),
+        SEND_MESSAGE_TIMEOUT_MS,
+        "ACP session initialization"
+      );
+      await acp.setSessionModel(validated.value, model);
+      return corsResponse(JSON.stringify({ success: true, model }), 200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return corsResponse(
+        JSON.stringify({ error: `Failed to set model: ${message}` }),
         500
       );
     }

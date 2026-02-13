@@ -238,10 +238,12 @@ export class AgentProcess {
   }
 
   private getRequestTimeoutMs(method: string | undefined): number {
-    if (method === "initialize" || method === "session/new") {
-      return SESSION_BOOTSTRAP_TIMEOUT_MS;
-    }
-    if (method === "session/load") {
+    if (
+      method === "initialize" ||
+      method === "session/new" ||
+      method === "session/load" ||
+      method === "session/resume"
+    ) {
       return SESSION_BOOTSTRAP_TIMEOUT_MS;
     }
     if (method === "session/prompt") {

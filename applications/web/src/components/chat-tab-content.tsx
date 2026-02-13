@@ -118,7 +118,6 @@ export function ChatTabContent({
         <Chat.Input isSending={isActive} statusMessage={rateLimitMessage}>
           {firstModel && (
             <TextAreaGroup.ModelSelector
-              disabled={Boolean(session?.sandboxSessionId)}
               models={models ?? []}
               onChange={setModelId}
               value={modelId ?? firstModel.value}

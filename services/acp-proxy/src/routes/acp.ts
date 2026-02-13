@@ -61,8 +61,16 @@ function toRecord(value: unknown): Record<string, unknown> | null {
   return Object.fromEntries(Object.entries(value));
 }
 
-function applySessionNewPolicy(body: Record<string, unknown>): void {
-  if (body.method !== "session/new") {
+function isSessionConfigMethod(method: unknown): method is string {
+  return (
+    method === "session/new" ||
+    method === "session/load" ||
+    method === "session/resume"
+  );
+}
+
+function applySessionPolicy(body: Record<string, unknown>): void {
+  if (!isSessionConfigMethod(body.method)) {
     return;
   }
 
@@ -112,7 +120,7 @@ export async function handleAcpPost(
     body.id !== undefined ? `id=${body.id}` : ""
   );
 
-  applySessionNewPolicy(body);
+  applySessionPolicy(body);
 
   if (!agent.isRunning) {
     agent.spawnProcess();

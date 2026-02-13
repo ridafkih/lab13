@@ -117,6 +117,27 @@ function autoApprovePermission(request: RequestPermissionRequest): {
   return { outcome: { outcome: "cancelled" } };
 }
 
+function supportsSessionResume(initializeResult: unknown): boolean {
+  if (typeof initializeResult !== "object" || initializeResult === null) {
+    return false;
+  }
+
+  const root = Object.fromEntries(Object.entries(initializeResult));
+  const capabilities =
+    typeof root.agentCapabilities === "object" &&
+    root.agentCapabilities !== null
+      ? Object.fromEntries(Object.entries(root.agentCapabilities))
+      : null;
+  const sessionCapabilities =
+    capabilities &&
+    typeof capabilities.sessionCapabilities === "object" &&
+    capabilities.sessionCapabilities !== null
+      ? Object.fromEntries(Object.entries(capabilities.sessionCapabilities))
+      : null;
+
+  return Boolean(sessionCapabilities?.resume);
+}
+
 export class AgentSessionManager {
   private readonly baseUrl: string;
   private readonly clients = new Map<string, AcpHttpClient>();
@@ -181,7 +202,23 @@ export class AgentSessionManager {
 
     const sessionInit = buildSessionInit(options);
     const canLoadSession = Boolean(initResult.agentCapabilities?.loadSession);
+    const canResumeSession = supportsSessionResume(initResult);
     const requestedLoadSessionId = options.loadSessionId;
+
+    if (requestedLoadSessionId && canResumeSession) {
+      try {
+        await client.unstableResumeSession({
+          sessionId: requestedLoadSessionId,
+          cwd: sessionInit.cwd,
+          mcpServers: sessionInit.mcpServers,
+          _meta: sessionInit._meta,
+        });
+        this.sessionIds.set(serverId, requestedLoadSessionId);
+        return requestedLoadSessionId;
+      } catch {
+        // Fall through to load/new fallback chain
+      }
+    }
 
     if (canLoadSession && requestedLoadSessionId) {
       try {
@@ -256,6 +293,7 @@ export class AgentSessionManager {
           id: null,
           result: { stopReason: "end_turn" },
         });
+        throw error;
       })
       .finally(() => {
         this.inFlightPrompts.delete(serverId);
@@ -266,6 +304,23 @@ export class AgentSessionManager {
       pendingPrompt.catch(() => undefined)
     );
     return this.awaitPromptStart(pendingPrompt);
+  }
+
+  async setSessionModel(serverId: string, model: string): Promise<void> {
+    const client = this.clients.get(serverId);
+    if (!client) {
+      throw new Error(`No session for server: ${serverId}`);
+    }
+
+    const sessionId = this.sessionIds.get(serverId);
+    if (!sessionId) {
+      throw new Error(`No session ID for server: ${serverId}`);
+    }
+
+    await client.unstableSetSessionModel({
+      sessionId,
+      modelId: model,
+    });
   }
 
   private async awaitPromptStart(pendingPrompt: Promise<void>): Promise<void> {

@@ -58,6 +58,7 @@ function TabContent({ tab }: { tab: TabValue }) {
   const {
     messages,
     sendMessage,
+    setModel,
     abortSession,
     sessionStatus,
     questionRequests,
@@ -74,6 +75,7 @@ function TabContent({ tab }: { tab: TabValue }) {
         <Chat.Provider
           key={sessionId}
           onAbort={abortSession}
+          onModelChange={setModel}
           onSubmit={sendMessage}
         >
           <ChatTabContent
@@ -96,6 +98,7 @@ function TabContent({ tab }: { tab: TabValue }) {
         <Chat.Provider
           key={`stream-${sessionId}`}
           onAbort={abortSession}
+          onModelChange={setModel}
           onSubmit={sendMessage}
         >
           <StreamTabContent />
