@@ -36,6 +36,10 @@ export function isKnownEventType(type: string): type is ParsedEventType {
 export function extractTextFromEvent(event: AcpEvent): string | null {
   const data = event.data;
 
+  if (event.type === "item.delta" && typeof data.delta === "string") {
+    return data.delta;
+  }
+
   // item.delta: look for text content in deltas
   if (event.type === "item.delta" && Array.isArray(data.deltas)) {
     for (const delta of data.deltas) {

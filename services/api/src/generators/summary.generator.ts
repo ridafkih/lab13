@@ -20,6 +20,43 @@ interface GenerateSummaryOptions {
   platformOrigin?: string;
 }
 
+function trimForMessage(text: string, limit: number): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= limit) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, limit - 1)}…`;
+}
+
+function buildFallbackSummary(
+  originalTask: string,
+  messages: ReconstructedMessage[]
+): TaskSummary {
+  const lastAssistantMessage = [...messages]
+    .reverse()
+    .find((message) => message.role === MESSAGE_ROLE.ASSISTANT);
+
+  if (lastAssistantMessage?.content) {
+    return {
+      success: true,
+      outcome: "Session completed",
+      summary: trimForMessage(
+        lastAssistantMessage.content,
+        LIMITS.SUMMARY_FALLBACK_LENGTH
+      ),
+    };
+  }
+
+  return {
+    success: true,
+    outcome: "Session completed",
+    summary: trimForMessage(
+      `Session completed for task: ${originalTask}. I couldn't extract a detailed transcript, but the session reached completion.`,
+      LIMITS.SUMMARY_FALLBACK_LENGTH
+    ),
+  };
+}
+
 function formatConversationForLLM(messages: ReconstructedMessage[]): string {
   return messages
     .map((message) => {
@@ -66,11 +103,7 @@ export async function generateTaskSummary(
     const messages = await fetchSessionMessages(sessionId);
 
     if (messages.length === 0) {
-      return {
-        success: false,
-        outcome: "No conversation history",
-        summary: "Unable to generate summary - no conversation history found.",
-      };
+      return buildFallbackSummary(originalTask, messages);
     }
 
     const conversationText = formatConversationForLLM(messages);
@@ -104,24 +137,32 @@ Only output the JSON, no other text.`;
 
     try {
       const parsed = JSON.parse(result);
+      const parsedSummary =
+        typeof parsed.summary === "string" ? parsed.summary.trim() : "";
+      if (!parsedSummary) {
+        return buildFallbackSummary(originalTask, messages);
+      }
       return {
         success: Boolean(parsed.success),
         outcome: String(parsed.outcome || "Task processed"),
-        summary: String(parsed.summary || "Task completed."),
+        summary: trimForMessage(parsedSummary, LIMITS.SUMMARY_FALLBACK_LENGTH),
       };
     } catch {
-      return {
-        success: true,
-        outcome: "Task completed",
-        summary: result.slice(0, LIMITS.SUMMARY_FALLBACK_LENGTH),
-      };
+      const fallbackFromRaw = result.trim();
+      if (fallbackFromRaw) {
+        return {
+          success: true,
+          outcome: "Task completed",
+          summary: trimForMessage(
+            fallbackFromRaw,
+            LIMITS.SUMMARY_FALLBACK_LENGTH
+          ),
+        };
+      }
+      return buildFallbackSummary(originalTask, messages);
     }
   } catch (error) {
     widelog.errorFields(error, { prefix: "summary_generator.error" });
-    return {
-      success: false,
-      outcome: "Error generating summary",
-      summary: "Task completed, but unable to generate a detailed summary.",
-    };
+    return buildFallbackSummary(originalTask, []);
   }
 }

@@ -244,7 +244,22 @@ class MessageAccumulator {
       return;
     }
 
-    // tool_call or tool_result — merge into the current assistant message
+    // tool_call or tool_result
+    // If there is no active assistant message, start a new assistant step
+    // so tool activity renders as its own bubble in history/replay.
+    if (!this.currentAssistantId) {
+      const assistantStep: MessageState = {
+        id: itemId,
+        role: "assistant",
+        parts: content,
+      };
+      this.messages.push(assistantStep);
+      this.itemIdToMessageId.set(itemId, itemId);
+      this.currentAssistantId = itemId;
+      return;
+    }
+
+    // Otherwise merge into the current assistant message.
     if (this.currentAssistantId) {
       this.itemIdToMessageId.set(itemId, this.currentAssistantId);
       const activeAssistantMessage = this.messages.find(

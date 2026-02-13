@@ -108,6 +108,7 @@ export class ApiServer {
     const handleAcpProxy = createAcpProxyHandler({
       acp,
       publisher: this.publisher,
+      sandbox,
       promptService,
       sessionStateStore,
       mcpUrl: this.config.mcpUrl,

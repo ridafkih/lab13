@@ -29,9 +29,17 @@ const toolRenderers: Record<string, ComponentType<ToolRendererProps>> = {
   question: QuestionRenderer,
 };
 
+function normalizeTool(tool: string): string {
+  const lower = tool.toLowerCase().trim();
+  const withoutScope = lower.includes("__")
+    ? (lower.split("__").at(-1) ?? lower)
+    : lower;
+  return withoutScope.replace(/[^a-z0-9]/g, "");
+}
+
 export function getToolRenderer(
   tool: string
 ): ComponentType<ToolRendererProps> {
-  const normalizedTool = tool.toLowerCase();
+  const normalizedTool = normalizeTool(tool);
   return toolRenderers[normalizedTool] ?? FallbackRenderer;
 }

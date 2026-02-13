@@ -6,7 +6,10 @@ import {
   chatOrchestrate,
   chatOrchestrateStream,
 } from "../../orchestration/chat-orchestrator/execute";
-import type { ChatOrchestratorResult } from "../../orchestration/chat-orchestrator/types";
+import {
+  CHAT_ORCHESTRATOR_ACTION,
+  type ChatOrchestratorResult,
+} from "../../orchestration/chat-orchestrator/types";
 import {
   getConversationHistory,
   saveOrchestratorMessage,
@@ -69,12 +72,12 @@ const POST: Handler<OrchestrationContext> = async ({ request, context }) => {
         imageStore: context.imageStore,
         sessionStateStore: context.sessionStateStore,
       }),
-      async (result) => {
+      async (result, persistedMessage) => {
         await saveOrchestratorMessage({
           platform: body.platformOrigin,
           platformChatId: body.platformChatId,
           role: MESSAGE_ROLE.ASSISTANT,
-          content: result.message,
+          content: persistedMessage,
           sessionId: result.sessionId,
         });
       }
@@ -117,12 +120,17 @@ function createSseStream(
     ChatOrchestratorResult,
     unknown
   >,
-  onComplete: (result: ChatOrchestratorResult) => Promise<void>
+  onComplete: (
+    result: ChatOrchestratorResult,
+    persistedMessage: string
+  ) => Promise<void>
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
 
   return new ReadableStream({
     async start(controller) {
+      const streamedChunks: string[] = [];
+
       const streamChunks = async (): Promise<ChatOrchestratorResult> => {
         while (true) {
           const iteration = await generator.next();
@@ -130,6 +138,7 @@ function createSseStream(
             return iteration.value;
           }
           const chunk = iteration.value;
+          streamedChunks.push(chunk.text);
           const event = `event: chunk\ndata: ${JSON.stringify({ text: chunk.text })}\n\n`;
           controller.enqueue(encoder.encode(event));
         }
@@ -137,16 +146,32 @@ function createSseStream(
 
       try {
         const finalResult = await streamChunks();
+        const streamedText = streamedChunks.join("\n\n").trim();
+        const persistedMessage = finalResult.message.trim() || streamedText;
+        const completedResult = {
+          ...finalResult,
+          message: persistedMessage || finalResult.message,
+        };
 
         // Save the message
-        await onComplete(finalResult);
+        await onComplete(completedResult, completedResult.message);
 
         // Send the done event with full result
-        const doneEvent = `event: done\ndata: ${JSON.stringify(finalResult)}\n\n`;
+        const doneEvent = `event: done\ndata: ${JSON.stringify(completedResult)}\n\n`;
         controller.enqueue(encoder.encode(doneEvent));
 
         controller.close();
       } catch (error) {
+        const partialMessage = streamedChunks.join("\n\n").trim();
+        if (partialMessage) {
+          await onComplete(
+            {
+              action: CHAT_ORCHESTRATOR_ACTION.RESPONSE,
+              message: partialMessage,
+            },
+            partialMessage
+          );
+        }
         widelog.errorFields(error, { prefix: "orchestration.stream_error" });
         widelog.set("orchestration.stream_outcome", "error");
         const errorMessage =

@@ -35,6 +35,9 @@ const LAB_TOOL_ALLOWLIST = [
   "mcp__lab__Glob",
   "mcp__lab__gh",
   "mcp__lab__WebFetch",
+  "mcp__lab__TodoWrite",
+  "mcp__lab__TaskCreate",
+  "mcp__lab__TaskUpdate",
   "bash",
   "browser",
   "containers",
@@ -50,6 +53,9 @@ const LAB_TOOL_ALLOWLIST = [
   "Glob",
   "gh",
   "WebFetch",
+  "TodoWrite",
+  "TaskCreate",
+  "TaskUpdate",
 ] as const;
 
 const CLAUDE_TOOL_DENYLIST = [
@@ -378,6 +384,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function toRecord(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? { ...value } : null;
+}
+
 function hasMessageMethod(envelope: AnyMessage): envelope is AnyMessage & {
   method: string;
   params: unknown;
@@ -390,6 +400,25 @@ export function envelopeToSandboxEvent(
   envelope: AnyMessage,
   sequence = 0
 ): AcpEvent | null {
+  if ("error" in envelope && envelope.error) {
+    return {
+      type: "error",
+      sequence,
+      data: { error: envelope.error as unknown },
+    };
+  }
+
+  if ("result" in envelope) {
+    const result = toRecord(envelope.result);
+    if (result?.stopReason) {
+      return {
+        type: "turn.ended",
+        sequence,
+        data: result,
+      };
+    }
+  }
+
   if (!hasMessageMethod(envelope)) {
     return null;
   }
@@ -399,6 +428,34 @@ export function envelopeToSandboxEvent(
 
   if (typeof method !== "string" || !isRecord(params)) {
     return null;
+  }
+
+  if (method === "session/update") {
+    const update = toRecord(params.update);
+    const sessionUpdate = update?.sessionUpdate;
+
+    if (sessionUpdate === "agent_message_chunk") {
+      const content = toRecord(update?.content);
+      return {
+        type: "item.delta",
+        sequence,
+        data: {
+          delta: typeof content?.text === "string" ? content.text : "",
+        },
+      };
+    }
+
+    if (
+      sessionUpdate === "tool_call" ||
+      sessionUpdate === "tool_call_update" ||
+      sessionUpdate === "item_completed"
+    ) {
+      return {
+        type: "item.started",
+        sequence,
+        data: update ?? {},
+      };
+    }
   }
 
   const data: Record<string, unknown> = { ...params };

@@ -47,6 +47,14 @@ Important:
 - After installing dependencies that involve a build step (e.g., native modules, compiled packages), restart the container with \`restart_process\` to ensure changes take effect.
 </container_tools>
 
+<task_tracking>
+Use task tools to keep the UI Tasks section accurate:
+- \`TodoWrite\` should include the full ordered task list (single source of truth)
+- \`TaskCreate\` should add a task with stable \`id\` when available
+- \`TaskUpdate\` should update an existing task by \`taskId\`
+- Keep status values strict: \`pending\`, \`in_progress\`, \`completed\`
+</task_tracking>
+
 <verification>
 Always verify your changes work correctly:
 - Navigate to the relevant page in the browser after making UI changes

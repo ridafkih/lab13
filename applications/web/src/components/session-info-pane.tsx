@@ -2,7 +2,6 @@
 
 import {
   Box,
-  CheckSquare,
   ExternalLink,
   FileText,
   GitBranch,
@@ -12,6 +11,7 @@ import type { ReactNode } from "react";
 import { tv } from "tailwind-variants";
 import { Button } from "@/components/button";
 import { cn } from "@/lib/cn";
+import { TaskStatusIcon } from "./task-status-icon";
 
 const text = tv({
   base: "text-xs",
@@ -220,17 +220,10 @@ function SessionInfoPaneTaskItem({
   title: string;
   status: "pending" | "in_progress" | "completed";
 }) {
-  const statusIcon = {
-    pending: "○",
-    in_progress: "◐",
-    completed: "●",
-  };
-
   return (
     <div className={row({ interactive: true })}>
-      <CheckSquare className={text({ color: "muted" })} size={12} />
+      <TaskStatusIcon status={status} />
       <span className="flex-1 truncate">{title}</span>
-      <span className={text({ color: "muted" })}>{statusIcon[status]}</span>
     </div>
   );
 }

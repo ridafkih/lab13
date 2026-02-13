@@ -1,17 +1,19 @@
 import type {
   ReplaceSessionTaskInput,
   SessionTaskStatus,
+  UpsertSessionTaskInput,
 } from "../repositories/session-task.repository";
 
 interface ParsedTask {
   externalId: string | null;
-  content: string;
+  content: string | null;
   status: SessionTaskStatus;
   priority: number | null;
 }
 
 interface ParsedTodoEvent {
   sourceToolName: string;
+  mode: "replace" | "upsert";
   tasks: ParsedTask[];
 }
 
@@ -26,6 +28,14 @@ function toRecord(value: unknown): Record<string, unknown> | null {
 
 function getString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function normalizeToolName(toolName: string): string {
+  const trimmed = toolName.trim().toLowerCase();
+  const withoutScope = trimmed.includes("__")
+    ? (trimmed.split("__").at(-1) ?? trimmed)
+    : trimmed;
+  return withoutScope.replace(/[^a-z0-9]/g, "");
 }
 
 function getNumber(value: unknown): number | null {
@@ -49,33 +59,48 @@ function extractTaskContent(input: Record<string, unknown>): string | null {
   return content?.trim() ? content.trim() : null;
 }
 
-function parseSingleTask(rawTask: unknown): ParsedTask | null {
+function parseSingleTask(
+  rawTask: unknown,
+  options: { requireContent: boolean }
+): ParsedTask | null {
   const taskRecord = toRecord(rawTask);
   if (!taskRecord) {
     return null;
   }
 
   const content = extractTaskContent(taskRecord);
-  if (!content) {
+  if (options.requireContent && !content) {
+    return null;
+  }
+
+  const externalId =
+    getString(taskRecord.id) ??
+    getString(taskRecord.taskId) ??
+    getString(taskRecord.task_id);
+
+  if (!(externalId || content)) {
     return null;
   }
 
   return {
-    externalId: getString(taskRecord.id),
+    externalId,
     content,
     status: normalizeStatus(taskRecord.status),
     priority: getNumber(taskRecord.priority),
   };
 }
 
-function parseTasks(rawInput: Record<string, unknown>): ParsedTask[] {
+function parseTasks(
+  rawInput: Record<string, unknown>,
+  options: { requireContent: boolean }
+): ParsedTask[] {
   if (Array.isArray(rawInput.todos)) {
     return rawInput.todos
-      .map(parseSingleTask)
+      .map((task) => parseSingleTask(task, options))
       .filter((task): task is ParsedTask => task !== null);
   }
 
-  const singleTask = parseSingleTask(rawInput);
+  const singleTask = parseSingleTask(rawInput, options);
   return singleTask ? [singleTask] : [];
 }
 
@@ -103,7 +128,8 @@ export function extractTodoEvent(envelope: unknown): ParsedTodoEvent | null {
   }
 
   const toolName = getToolName(update);
-  if (!(toolName && TODO_TOOL_NAMES.has(toolName.toLowerCase()))) {
+  const normalizedToolName = toolName ? normalizeToolName(toolName) : null;
+  if (!(normalizedToolName && TODO_TOOL_NAMES.has(normalizedToolName))) {
     return null;
   }
 
@@ -112,21 +138,37 @@ export function extractTodoEvent(envelope: unknown): ParsedTodoEvent | null {
     return null;
   }
 
+  const mode = normalizedToolName === "todowrite" ? "replace" : "upsert";
+  const requireContent = normalizedToolName !== "taskupdate";
+
   return {
-    sourceToolName: toolName,
-    tasks: parseTasks(rawInput),
+    sourceToolName: toolName ?? normalizedToolName,
+    mode,
+    tasks: parseTasks(rawInput, { requireContent }),
   };
 }
 
-export function mapToTaskRows(
+export function mapToReplaceTaskRows(
   parsed: ParsedTodoEvent
 ): ReplaceSessionTaskInput[] {
   return parsed.tasks.map((task, index) => ({
     externalId: task.externalId,
-    content: task.content,
+    content: task.content ?? "",
     status: task.status,
     priority: task.priority,
     position: index,
+    sourceToolName: parsed.sourceToolName,
+  }));
+}
+
+export function mapToUpsertTaskRows(
+  parsed: ParsedTodoEvent
+): UpsertSessionTaskInput[] {
+  return parsed.tasks.map((task) => ({
+    externalId: task.externalId,
+    content: task.content,
+    status: task.status,
+    priority: task.priority,
     sourceToolName: parsed.sourceToolName,
   }));
 }

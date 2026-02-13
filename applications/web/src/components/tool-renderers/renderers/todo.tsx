@@ -1,7 +1,6 @@
 "use client";
 
-import { CheckCircle2, Circle, CircleDot } from "lucide-react";
-import { tv } from "tailwind-variants";
+import { type TaskStatus, TaskStatusIcon } from "@/components/task-status-icon";
 import { getArray, getString } from "../shared/get-input";
 import type { ToolRendererProps } from "../types";
 
@@ -9,28 +8,11 @@ interface TodoItem {
   id?: string;
   content?: string;
   subject?: string;
-  status?: "pending" | "in_progress" | "completed";
+  status?: TaskStatus;
   priority?: number;
 }
 
-const statusIcon = tv({
-  base: "size-3 shrink-0",
-  variants: {
-    status: {
-      pending: "text-text-muted",
-      in_progress: "text-yellow-500",
-      completed: "text-green-500",
-    },
-  },
-});
-
-const statusIcons = {
-  pending: Circle,
-  in_progress: CircleDot,
-  completed: CheckCircle2,
-};
-
-function toTodoStatus(value: string): keyof typeof statusIcons {
+function toTodoStatus(value: string): TaskStatus {
   if (value === "pending" || value === "in_progress" || value === "completed") {
     return value;
   }
@@ -66,14 +48,7 @@ function TodoRenderer({ input, error }: ToolRendererProps) {
           {inputStatus &&
             (() => {
               const normalizedStatus = toTodoStatus(inputStatus);
-              const Icon = statusIcons[normalizedStatus] ?? Circle;
-              return (
-                <Icon
-                  className={statusIcon({
-                    status: normalizedStatus,
-                  })}
-                />
-              );
+              return <TaskStatusIcon status={normalizedStatus} />;
             })()}
           <div className="flex flex-col gap-0.5">
             <span className="text-xs">{subject}</span>
@@ -84,15 +59,13 @@ function TodoRenderer({ input, error }: ToolRendererProps) {
         </div>
       )}
       {todos.map((todo, index) => {
-        const Icon = statusIcons[todo.status ?? "pending"] ?? Circle;
+        const status = toTodoStatus(todo.status ?? "pending");
         const todoKey =
           todo.id ??
           `${todo.subject ?? todo.content ?? "todo"}-${todo.status ?? "pending"}-${index}`;
         return (
           <div className="flex items-start gap-2 px-4 py-1" key={todoKey}>
-            <Icon
-              className={statusIcon({ status: todo.status ?? "pending" })}
-            />
+            <TaskStatusIcon status={status} />
             <span className="text-xs">{todo.content ?? todo.subject}</span>
           </div>
         );

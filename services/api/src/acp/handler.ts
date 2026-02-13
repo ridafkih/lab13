@@ -7,6 +7,7 @@ import {
   getMaxSequence,
   storeAgentEvent,
 } from "../repositories/agent-event.repository";
+import { getWorkspaceContainerRuntimeId } from "../repositories/container-session.repository";
 import { getProjectSystemPrompt } from "../repositories/project.repository";
 import {
   findSessionById,
@@ -15,19 +16,25 @@ import {
 import {
   findSessionTasks,
   replaceSessionTasks,
+  upsertSessionTasks,
 } from "../repositories/session-task.repository";
 import { resolveWorkspacePathBySession } from "../shared/path-resolver";
 import type { SessionStateStore } from "../state/session-state-store";
-import type { Publisher } from "../types/dependencies";
+import type { Publisher, Sandbox } from "../types/dependencies";
 import type { PromptService } from "../types/prompt";
 import type { AcpClient } from "./client";
-import { extractTodoEvent, mapToTaskRows } from "./todo-tracker";
+import {
+  extractTodoEvent,
+  mapToReplaceTaskRows,
+  mapToUpsertTaskRows,
+} from "./todo-tracker";
 
 type AcpProxyHandler = (request: Request, url: URL) => Promise<Response>;
 
 interface AcpProxyDeps {
   acp: AcpClient;
   publisher: Publisher;
+  sandbox: Sandbox;
   promptService: PromptService;
   sessionStateStore: SessionStateStore;
   mcpUrl?: string;
@@ -115,14 +122,12 @@ function resolveWorkspacePath(
   return requestedPath;
 }
 
-function getString(value: unknown, fallback = ""): string {
-  return typeof value === "string" ? value : fallback;
-}
-
 const PATH_PREFIX = /^\/acp/;
 const PERMISSION_REPLY_PATTERN = /^\/permissions\/([^/]+)\/reply$/;
 const QUESTION_REPLY_PATTERN = /^\/questions\/([^/]+)\/reply$/;
 const QUESTION_REJECT_PATTERN = /^\/questions\/([^/]+)\/reject$/;
+const LEADING_SLASHES_REGEX = /^\/+/;
+const TRAILING_SLASHES_REGEX = /\/+$/;
 
 function buildMcpServers(
   mcpUrl: string | undefined,
@@ -142,7 +147,8 @@ function buildMcpServers(
 }
 
 export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
-  const { acp, publisher, promptService, sessionStateStore, mcpUrl } = deps;
+  const { acp, publisher, sandbox, promptService, sessionStateStore, mcpUrl } =
+    deps;
 
   function requireLabSessionId(id: string | null): ValidationResult<string> {
     if (!id) {
@@ -526,8 +532,13 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
         return;
       }
 
-      const taskRows = mapToTaskRows(parsedTodoEvent);
-      await replaceSessionTasks(sessionId, taskRows);
+      if (parsedTodoEvent.mode === "replace") {
+        const taskRows = mapToReplaceTaskRows(parsedTodoEvent);
+        await replaceSessionTasks(sessionId, taskRows);
+      } else {
+        const taskRows = mapToUpsertTaskRows(parsedTodoEvent);
+        await upsertSessionTasks(sessionId, taskRows);
+      }
 
       const snapshot = await findSessionTasks(sessionId);
       publisher.publishSnapshot("sessionTasks", { uuid: sessionId }, snapshot);
@@ -638,9 +649,30 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
     }
 
     try {
+      const workspaceDirectory =
+        session.workspaceDirectory ??
+        (await resolveWorkspacePathBySession(validated.value));
+
+      const changedFilesFromWorkspace = await extractChangedFilesFromWorkspace(
+        validated.value,
+        session,
+        sandbox
+      );
+      if (changedFilesFromWorkspace) {
+        return corsResponse(
+          JSON.stringify(
+            toClientChangedFiles(changedFilesFromWorkspace, workspaceDirectory)
+          ),
+          200
+        );
+      }
+
       const events = await getAgentEvents(validated.value);
       const changedFiles = extractChangedFilesFromStoredEvents(events);
-      return corsResponse(JSON.stringify(changedFiles), 200);
+      return corsResponse(
+        JSON.stringify(toClientChangedFiles(changedFiles, workspaceDirectory)),
+        200
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       return corsResponse(
@@ -838,9 +870,224 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
 
 interface ChangedFileInfo {
   path: string;
-  status: "added" | "modified";
+  status: "added" | "modified" | "deleted";
   added: number;
   removed: number;
+}
+
+function toWorkspaceRelativePath(
+  filePath: string,
+  workspaceDirectory: string | null | undefined
+): string {
+  const normalizedPath = filePath.replace(LEADING_SLASHES_REGEX, "");
+  if (!workspaceDirectory) {
+    return normalizedPath;
+  }
+
+  const normalizedWorkspace = workspaceDirectory
+    .replace(LEADING_SLASHES_REGEX, "")
+    .replace(TRAILING_SLASHES_REGEX, "");
+
+  if (normalizedPath === normalizedWorkspace) {
+    return ".";
+  }
+
+  const workspacePrefix = `${normalizedWorkspace}/`;
+  if (normalizedPath.startsWith(workspacePrefix)) {
+    return normalizedPath.slice(workspacePrefix.length);
+  }
+
+  return normalizedPath;
+}
+
+function toClientChangedFiles(
+  files: ChangedFileInfo[],
+  workspaceDirectory: string | null | undefined
+): ChangedFileInfo[] {
+  return files.map((file) => ({
+    ...file,
+    path: toWorkspaceRelativePath(file.path, workspaceDirectory),
+  }));
+}
+
+function normalizeGitPath(path: string): string {
+  if (path.startsWith("./")) {
+    return path.slice(2);
+  }
+  return path.startsWith("/") ? path.slice(1) : path;
+}
+
+function parseGitStatusLine(
+  line: string
+): { path: string; status: ChangedFileInfo["status"] } | null {
+  if (line.length < 4) {
+    return null;
+  }
+
+  const xy = line.slice(0, 2);
+  const rawPath = line.slice(3).trim();
+  if (!rawPath) {
+    return null;
+  }
+
+  const path = normalizeGitPath(
+    rawPath.includes(" -> ")
+      ? (rawPath.split(" -> ").at(-1) ?? rawPath)
+      : rawPath
+  );
+
+  const [x, y] = xy;
+  if (x === "D" || y === "D") {
+    return { path, status: "deleted" };
+  }
+
+  if (x === "A" || y === "A" || xy === "??") {
+    return { path, status: "added" };
+  }
+
+  return { path, status: "modified" };
+}
+
+async function extractChangedFilesFromWorkspace(
+  sessionId: string,
+  session: Session,
+  sandbox: Sandbox
+): Promise<ChangedFileInfo[] | null> {
+  const workspace = await getWorkspaceContainerRuntimeId(sessionId);
+  if (!workspace?.runtimeId) {
+    return null;
+  }
+
+  const workdir =
+    session.workspaceDirectory ??
+    (await resolveWorkspacePathBySession(sessionId));
+
+  const result = await sandbox.provider.exec(workspace.runtimeId, {
+    command: ["sh", "-lc", "git status --porcelain=v1 --untracked-files=all"],
+    workdir,
+  });
+
+  if (result.exitCode !== 0) {
+    return null;
+  }
+
+  const fileMap = new Map<string, ChangedFileInfo>();
+  for (const line of result.stdout.split("\n")) {
+    const parsed = parseGitStatusLine(line.trimEnd());
+    if (!parsed) {
+      continue;
+    }
+    applyChangedFile(fileMap, parsed.path, parsed.status);
+  }
+
+  return [...fileMap.values()];
+}
+
+function toEventRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null
+    ? Object.fromEntries(Object.entries(value))
+    : null;
+}
+
+function normalizeToolName(name: string): string {
+  const lower = name.trim().toLowerCase();
+  const unscoped = lower.includes("__")
+    ? (lower.split("__").at(-1) ?? lower)
+    : lower;
+  return unscoped.replace(/[^a-z0-9]/g, "");
+}
+
+function readFilePath(input: Record<string, unknown>): string | null {
+  const candidates = [
+    input.filePath,
+    input.file_path,
+    input.path,
+    input.targetPath,
+    input.target_path,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  return null;
+}
+
+function parseToolArguments(value: unknown): Record<string, unknown> {
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      const record = toEventRecord(parsed);
+      return record ?? {};
+    } catch {
+      return {};
+    }
+  }
+
+  return toEventRecord(value) ?? {};
+}
+
+function applyChangedFile(
+  fileMap: Map<string, ChangedFileInfo>,
+  filePath: string,
+  status: ChangedFileInfo["status"]
+): void {
+  const normalizedPath = filePath.startsWith("/")
+    ? filePath.slice(1)
+    : filePath;
+  const existing = fileMap.get(normalizedPath);
+
+  if (existing) {
+    existing.status = status === "deleted" ? "deleted" : "modified";
+    return;
+  }
+
+  fileMap.set(normalizedPath, {
+    path: normalizedPath,
+    status,
+    added: 0,
+    removed: 0,
+  });
+}
+
+function processToolCallUpdate(
+  update: Record<string, unknown>,
+  fileMap: Map<string, ChangedFileInfo>
+): void {
+  const meta = toEventRecord(update._meta);
+  const claudeCode = meta ? toEventRecord(meta.claudeCode) : null;
+  const toolNameRaw =
+    (typeof claudeCode?.toolName === "string" ? claudeCode.toolName : null) ??
+    (typeof update.toolName === "string" ? update.toolName : null);
+  if (!toolNameRaw) {
+    return;
+  }
+
+  const toolName = normalizeToolName(toolNameRaw);
+  const isWriteTool = toolName === "write";
+  const isEditTool = toolName === "edit" || toolName === "patch";
+  const isDeleteTool = toolName === "delete" || toolName === "rm";
+
+  if (!(isWriteTool || isEditTool || isDeleteTool)) {
+    return;
+  }
+
+  const args = parseToolArguments(update.rawInput ?? update.input);
+  const filePath = readFilePath(args);
+  if (!filePath) {
+    return;
+  }
+
+  let status: ChangedFileInfo["status"] = "modified";
+  if (isDeleteTool) {
+    status = "deleted";
+  } else if (isWriteTool) {
+    status = "added";
+  }
+
+  applyChangedFile(fileMap, filePath, status);
 }
 
 function processToolCallPart(
@@ -851,41 +1098,31 @@ function processToolCallPart(
     return;
   }
 
-  const toolName = getString(part.name);
-  if (toolName !== "Write" && toolName !== "Edit") {
+  const rawToolName =
+    typeof part.name === "string" && part.name.length > 0 ? part.name : "";
+  const toolName = normalizeToolName(rawToolName);
+  const isWriteTool = toolName === "write";
+  const isEditTool = toolName === "edit" || toolName === "patch";
+  const isDeleteTool = toolName === "delete" || toolName === "rm";
+
+  if (!(isWriteTool || isEditTool || isDeleteTool)) {
     return;
   }
 
-  try {
-    const args = JSON.parse(
-      typeof part.arguments === "string" ? part.arguments : "{}"
-    );
-    const filePath = getString(args.file_path);
-    if (!filePath) {
-      return;
-    }
-
-    const normalizedPath = filePath.startsWith("/")
-      ? filePath.slice(1)
-      : filePath;
-
-    const existing = fileMap.get(normalizedPath);
-    if (existing) {
-      existing.status = "modified";
-    } else {
-      fileMap.set(normalizedPath, {
-        path: normalizedPath,
-        status: toolName === "Write" ? "added" : "modified",
-        added: 0,
-        removed: 0,
-      });
-    }
-  } catch (error) {
-    widelog.set(
-      "sandbox_agent.parse_tool_args_error",
-      error instanceof Error ? error.message : "Unknown"
-    );
+  const args = parseToolArguments(part.arguments ?? part.input);
+  const filePath = readFilePath(args);
+  if (!filePath) {
+    return;
   }
+
+  let status: ChangedFileInfo["status"] = "modified";
+  if (isDeleteTool) {
+    status = "deleted";
+  } else if (isWriteTool) {
+    status = "added";
+  }
+
+  applyChangedFile(fileMap, filePath, status);
 }
 
 function extractChangedFilesFromStoredEvents(
@@ -907,18 +1144,21 @@ function extractChangedFilesFromStoredEvents(
     }
 
     const update = params.update;
-    if (!isEventRecord(update)) {
-      continue;
+    if (isEventRecord(update)) {
+      const sessionUpdate = update.sessionUpdate;
+      if (
+        sessionUpdate === "tool_call" ||
+        sessionUpdate === "tool_call_update" ||
+        sessionUpdate === "item_completed"
+      ) {
+        processToolCallUpdate(update, fileMap);
+      }
     }
 
-    if (
-      update.sessionUpdate !== "item_completed" &&
-      method !== "item.completed"
-    ) {
-      continue;
-    }
-
-    const content = resolveEventContent(update, params);
+    const content = resolveEventContent(
+      isEventRecord(update) ? update : {},
+      params
+    );
 
     for (const part of content) {
       if (isEventRecord(part)) {

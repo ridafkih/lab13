@@ -33,12 +33,16 @@ export async function initiateAgentSession(
   const { sessionId, acp } = options;
 
   const existing = await findSessionById(sessionId);
-  if (existing?.sandboxSessionId) {
+  const modelId = options.modelId ?? getDefaultModelId();
+  const workspacePath =
+    existing?.workspaceDirectory ??
+    (await resolveWorkspacePathBySession(sessionId));
+
+  if (existing?.sandboxSessionId && acp.hasSession(sessionId)) {
     return existing.sandboxSessionId;
   }
 
-  const modelId = options.modelId ?? getDefaultModelId();
-  const workspacePath = await resolveWorkspacePathBySession(sessionId);
+  const loadSessionId = existing?.sandboxSessionId ?? undefined;
 
   try {
     const sandboxSessionId = await acp.createSession(sessionId, {
@@ -46,6 +50,7 @@ export async function initiateAgentSession(
       model: modelId,
       systemPrompt: options.systemPrompt,
       mcpServers: options.mcpServers,
+      loadSessionId,
     });
 
     await updateSessionFields(sessionId, {

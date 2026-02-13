@@ -101,8 +101,12 @@ function handleMessageChunk(
   content: { text: string; type: string },
   sequence: number
 ): AcpEvent[] {
-  if (content.text === "" && !activeItemId) {
-    return startNewMessage(sequence);
+  if (!activeItemId) {
+    const events = startNewMessage(sequence);
+    if (content.text) {
+      events.push(...appendTextDelta(sequence, content.text));
+    }
+    return events;
   }
   if (content.text) {
     return appendTextDelta(sequence, content.text);
