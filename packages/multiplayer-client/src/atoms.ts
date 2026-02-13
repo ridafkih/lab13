@@ -13,6 +13,6 @@ export const connectionStateAtom = atom<ConnectionState>({
   status: "disconnected",
 });
 
-export const channelStateFamily = atomFamily((_channel: string) =>
+export const channelStateFamily = atomFamily(() =>
   atom<ChannelState<unknown>>({ status: "connecting" })
 );

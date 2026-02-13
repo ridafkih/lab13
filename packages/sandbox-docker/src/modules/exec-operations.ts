@@ -17,6 +17,7 @@ export class ExecOperations {
     const execInstance = await container.exec({
       Cmd: options.command,
       WorkingDir: options.workdir,
+      User: options.user,
       Env: options.env
         ? Object.entries(options.env).map(([key, value]) => `${key}=${value}`)
         : undefined,

@@ -50,7 +50,7 @@ export type ContentPart =
   | ImageContentPart
   | StatusContentPart;
 
-export interface SandboxAgentEvent {
+export interface AcpEvent {
   type: string;
   sequence: number;
   data: Record<string, unknown>;

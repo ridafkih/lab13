@@ -58,13 +58,11 @@ export function isRouteModule<TContext>(
     return false;
   }
 
-  const record = module as Record<string, unknown>;
-
-  for (const key of Object.keys(record)) {
+  for (const [key, value] of Object.entries(module)) {
     if (!isHttpMethod(key)) {
       continue;
     }
-    if (typeof record[key] !== "function") {
+    if (typeof value !== "function") {
       return false;
     }
   }

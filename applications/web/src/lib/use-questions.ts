@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { getAgentApiUrl } from "./sandbox-agent-session";
+import { getAgentApiUrl } from "./acp-session";
 
 interface UseQuestionsResult {
   isSubmitting: boolean;
@@ -18,7 +18,7 @@ export function useQuestions(labSessionId: string): UseQuestionsResult {
     try {
       const apiUrl = getAgentApiUrl();
       const response = await fetch(
-        `${apiUrl}/sandbox-agent/questions/${encodeURIComponent(requestId)}/reply`,
+        `${apiUrl}/acp/questions/${encodeURIComponent(requestId)}/reply`,
         {
           method: "POST",
           headers: {
@@ -43,7 +43,7 @@ export function useQuestions(labSessionId: string): UseQuestionsResult {
     try {
       const apiUrl = getAgentApiUrl();
       const response = await fetch(
-        `${apiUrl}/sandbox-agent/questions/${encodeURIComponent(requestId)}/reject`,
+        `${apiUrl}/acp/questions/${encodeURIComponent(requestId)}/reject`,
         {
           method: "POST",
           headers: {

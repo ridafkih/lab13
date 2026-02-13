@@ -1,15 +1,24 @@
-import { updateSessionFields } from "../repositories/session.repository";
-import type { SandboxAgentClientResolver } from "../sandbox-agent/client-resolver";
+import type { NewSessionRequest } from "acp-http-client";
+import type { AcpClient } from "../acp/client";
+import {
+  findSessionById,
+  updateSessionFields,
+} from "../repositories/session.repository";
 import { ExternalServiceError } from "../shared/errors";
 import { resolveWorkspacePathBySession } from "../shared/path-resolver";
 import type { SessionStateStore } from "../state/session-state-store";
 import type { Publisher } from "../types/dependencies";
 
-interface InitiateConversationOptions {
+interface InitiateAgentSessionOptions {
   sessionId: string;
-  task: string;
   modelId?: string;
-  sandboxAgentResolver: SandboxAgentClientResolver;
+  acp: AcpClient;
+  systemPrompt?: string;
+  mcpServers?: NewSessionRequest["mcpServers"];
+}
+
+interface InitiateConversationOptions extends InitiateAgentSessionOptions {
+  task: string;
   publisher: Publisher;
   sessionStateStore: SessionStateStore;
 }
@@ -18,46 +27,58 @@ function getDefaultModelId(): string | undefined {
   return process.env.DEFAULT_CONVERSATION_MODEL_ID;
 }
 
-export async function initiateConversation(
-  options: InitiateConversationOptions
-): Promise<void> {
-  const {
-    sessionId,
-    task,
-    sandboxAgentResolver,
-    publisher,
-    sessionStateStore,
-  } = options;
+export async function initiateAgentSession(
+  options: InitiateAgentSessionOptions
+): Promise<string> {
+  const { sessionId, acp } = options;
+
+  const existing = await findSessionById(sessionId);
+  if (existing?.sandboxSessionId) {
+    return existing.sandboxSessionId;
+  }
+
   const modelId = options.modelId ?? getDefaultModelId();
   const workspacePath = await resolveWorkspacePathBySession(sessionId);
 
-  const sandboxSessionId = crypto.randomUUID();
-  const sandboxAgent = await sandboxAgentResolver.getClient(sessionId);
-
   try {
-    await sandboxAgent.createSession(sandboxSessionId, {
-      agent: "claude",
+    const sandboxSessionId = await acp.createSession(sessionId, {
+      cwd: workspacePath,
       model: modelId,
-      permissionMode: "acceptEdits",
+      systemPrompt: options.systemPrompt,
+      mcpServers: options.mcpServers,
     });
+
+    await updateSessionFields(sessionId, {
+      sandboxSessionId,
+      workspaceDirectory: workspacePath,
+    });
+
+    return sandboxSessionId;
   } catch (error) {
     throw new ExternalServiceError(
-      `Failed to create Sandbox Agent session: ${error instanceof Error ? error.message : String(error)}`,
-      "SANDBOX_AGENT_SESSION_CREATE_FAILED"
+      `Failed to create session: ${error instanceof Error ? error.message : String(error)}`,
+      "SANDBOX_SESSION_CREATE_FAILED"
     );
   }
+}
 
-  await updateSessionFields(sessionId, {
-    sandboxSessionId,
-    workspaceDirectory: workspacePath,
+export async function initiateConversation(
+  options: InitiateConversationOptions
+): Promise<void> {
+  const { sessionId, task, acp, publisher, sessionStateStore } = options;
+
+  await initiateAgentSession({
+    sessionId,
+    modelId: options.modelId,
+    acp,
   });
 
   try {
-    await sandboxAgent.postMessage(sandboxSessionId, task);
+    await acp.sendMessage(sessionId, task);
   } catch (error) {
     throw new ExternalServiceError(
       `Failed to send initial message: ${error instanceof Error ? error.message : String(error)}`,
-      "SANDBOX_AGENT_INITIAL_PROMPT_FAILED"
+      "SANDBOX_INITIAL_PROMPT_FAILED"
     );
   }
 

@@ -1,8 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
+import type { AcpClient } from "../../acp/client";
 import { widelog } from "../../logging";
 import { findSessionById } from "../../repositories/session.repository";
-import type { SandboxAgentClientResolver } from "../../sandbox-agent/client-resolver";
 import { getErrorMessage } from "../../shared/errors";
 import type { SessionStateStore } from "../../state/session-state-store";
 import type { Publisher } from "../../types/dependencies";
@@ -15,7 +15,7 @@ const inputSchema = z.object({
 
 interface SendMessageToolContext {
   modelId?: string;
-  sandboxAgentResolver: SandboxAgentClientResolver;
+  acp: AcpClient;
   publisher: Publisher;
   sessionStateStore: SessionStateStore;
 }
@@ -43,7 +43,7 @@ export function createSendMessageToSessionTool(
           sessionId,
           sandboxSessionId: session.sandboxSessionId,
           content: message,
-          sandboxAgentResolver: context.sandboxAgentResolver,
+          acp: context.acp,
           publisher: context.publisher,
           sessionStateStore: context.sessionStateStore,
         });

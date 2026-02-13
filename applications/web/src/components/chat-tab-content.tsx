@@ -5,9 +5,9 @@ import { useSessionContext } from "@/app/editor/[sessionId]/layout";
 import { Chat, useChat } from "@/components/chat";
 import { MessagePart } from "@/components/message-part";
 import { TextAreaGroup } from "@/components/textarea-group";
+import { isToolCallPart } from "@/lib/acp-types";
 import { useModelSelection } from "@/lib/hooks";
 import { QuestionProvider } from "@/lib/question-context";
-import { isToolCallPart } from "@/lib/sandbox-agent-types";
 import type { MessageState, SessionStatus } from "@/lib/use-agent";
 import { useSessionStatus } from "@/lib/use-session-status";
 
@@ -48,11 +48,12 @@ export function ChatTabContent({
   const { session } = useSessionContext();
   const status = useSessionStatus(session);
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
-  const { scrollToBottom, getModelId, setModelId: setChatModelId } = useChat();
+  const { getModelId, setModelId: setChatModelId, scrollToBottom } = useChat();
   const { models, modelId, setModelId } = useModelSelection({
     syncTo: setChatModelId,
     currentSyncedValue: getModelId(),
   });
+  const firstModel = models?.[0];
   const isStreamingRef = useRef(false);
 
   const lastMessage = messages.at(-1);
@@ -70,11 +71,14 @@ export function ChatTabContent({
   useEffect(() => {
     if (isStreaming) {
       isStreamingRef.current = true;
-      scrollToBottom();
     } else if (isStreamingRef.current) {
       isStreamingRef.current = false;
     }
-  }, [isStreaming, scrollToBottom]);
+  }, [isStreaming]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [scrollToBottom]);
 
   useEffect(() => {
     if (sessionStatus.type === "retry") {
@@ -116,12 +120,12 @@ export function ChatTabContent({
           )}
         </Chat.Messages>
         <Chat.Input isSending={isActive} statusMessage={rateLimitMessage}>
-          {models && models.length > 0 && (
+          {firstModel && (
             <TextAreaGroup.ModelSelector
               disabled={Boolean(session?.sandboxSessionId)}
-              models={models}
+              models={models ?? []}
               onChange={setModelId}
-              value={modelId ?? models[0].value}
+              value={modelId ?? firstModel.value}
             />
           )}
         </Chat.Input>

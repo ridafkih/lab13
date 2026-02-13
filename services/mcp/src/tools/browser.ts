@@ -12,6 +12,7 @@ import {
   createHierarchicalTool,
   type ToolResult,
 } from "../utils/hierarchical-tool";
+import { resolveBoundLabSessionId } from "../utils/session-binding";
 
 function createS3Client(config: Config): S3Client {
   return new S3Client({
@@ -164,21 +165,22 @@ export function browser(server: McpServer, { config }: ToolContext) {
       };
     }
 
-    const data = result.data as {
-      path?: string;
-      frames?: number;
-      base64?: string;
-      mimeType?: string;
-    } | null;
+    const data =
+      typeof result.data === "object" && result.data !== null
+        ? Object.fromEntries(Object.entries(result.data))
+        : null;
+    const base64 = data && typeof data.base64 === "string" ? data.base64 : null;
 
-    if (!data?.base64) {
+    if (!base64) {
       return {
         isError: true,
         content: [{ type: "text", text: "Error: Recording data not returned" }],
       };
     }
 
-    const buffer = Buffer.from(data.base64, "base64");
+    const buffer = Buffer.from(base64, "base64");
+    const capturedFrames =
+      data && typeof data.frames === "number" ? data.frames : "unknown";
     const timestamp = Date.now();
     const filename = `${sessionId}/recording-${timestamp}.webm`;
 
@@ -188,7 +190,7 @@ export function browser(server: McpServer, { config }: ToolContext) {
         content: [
           {
             type: "text",
-            text: `Recording stopped successfully. Frames captured: ${data.frames ?? "unknown"}. Video available at ${url}`,
+            text: `Recording stopped successfully. Frames captured: ${capturedFrames}. Video available at ${url}`,
           },
         ],
       };
@@ -278,13 +280,14 @@ export function browser(server: McpServer, { config }: ToolContext) {
   }
 
   function recordingStopHandler(): CommandNode["handler"] {
-    return async (_args, ctx) => {
+    return async (...handlerArgs) => {
+      const context = handlerArgs[1];
       const command: BrowserCommand = {
-        id: ctx.generateCommandId(),
+        id: context.generateCommandId(),
         action: "recording_stop",
       };
-      const result = await executeCommand(ctx.sessionId, command);
-      return handleRecordingStopResult(ctx.sessionId, result);
+      const result = await executeCommand(context.sessionId, command);
+      return handleRecordingStopResult(context.sessionId, result);
     };
   }
 
@@ -520,20 +523,20 @@ export function browser(server: McpServer, { config }: ToolContext) {
             }
             const amount = typeof args.amount === "number" ? args.amount : 300;
 
-            let x = 0;
-            let y = 0;
+            let deltaX = 0;
+            let deltaY = 0;
             switch (direction) {
               case "up":
-                y = -amount;
+                deltaY = -amount;
                 break;
               case "down":
-                y = amount;
+                deltaY = amount;
                 break;
               case "left":
-                x = -amount;
+                deltaX = -amount;
                 break;
               case "right":
-                x = amount;
+                deltaX = amount;
                 break;
               default:
                 break;
@@ -542,8 +545,8 @@ export function browser(server: McpServer, { config }: ToolContext) {
             const command: BrowserCommand = {
               id: ctx.generateCommandId(),
               action: "scroll",
-              x,
-              y,
+              x: deltaX,
+              y: deltaY,
             };
 
             const result = await executeCommand(ctx.sessionId, command);
@@ -1023,6 +1026,11 @@ export function browser(server: McpServer, { config }: ToolContext) {
     description: "Browser automation - run with no command to see categories",
     sessionParam: "sessionId",
     tree: browserTree,
+    resolveSessionId: (args, extra) =>
+      resolveBoundLabSessionId(
+        extra,
+        typeof args.sessionId === "string" ? args.sessionId : undefined
+      ),
     contextFactory: (sessionId) => ({
       sessionId,
       generateCommandId: () =>

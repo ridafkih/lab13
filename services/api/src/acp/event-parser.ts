@@ -1,4 +1,4 @@
-import type { SandboxAgentEvent } from "../types/dependencies";
+import type { AcpEvent } from "../types/dependencies";
 
 export type ParsedEventType =
   | "turn.started"
@@ -33,7 +33,7 @@ export function isKnownEventType(type: string): type is ParsedEventType {
   return KNOWN_TYPES.has(type);
 }
 
-export function extractTextFromEvent(event: SandboxAgentEvent): string | null {
+export function extractTextFromEvent(event: AcpEvent): string | null {
   const data = event.data;
 
   // item.delta: look for text content in deltas
@@ -67,9 +67,7 @@ export function extractTextFromEvent(event: SandboxAgentEvent): string | null {
   return null;
 }
 
-export function extractItemRole(
-  event: SandboxAgentEvent
-): "user" | "assistant" | null {
+export function extractItemRole(event: AcpEvent): "user" | "assistant" | null {
   const role = event.data.role;
   if (role === "user" || role === "assistant") {
     return role;
@@ -77,7 +75,7 @@ export function extractItemRole(
   return null;
 }
 
-export function extractItemId(event: SandboxAgentEvent): string | null {
+export function extractItemId(event: AcpEvent): string | null {
   const id = event.data.id;
   return typeof id === "string" ? id : null;
 }

@@ -23,6 +23,14 @@ const LogEntrySchema = z.object({
   timestamp: z.number(),
 });
 
+const SessionTaskSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  status: z.enum(["pending", "in_progress", "completed"]),
+  priority: z.number().nullable(),
+  position: z.number(),
+});
+
 const SessionSchema = z.object({
   id: z.string(),
   projectId: z.string(),
@@ -127,6 +135,12 @@ export const schema = defineSchema({
         type: z.enum(["add", "update", "remove"]),
         file: ReviewableFileSchema,
       }),
+    }),
+
+    sessionTasks: defineChannel({
+      path: "session/:uuid/tasks",
+      snapshot: z.array(SessionTaskSchema),
+      default: [],
     }),
 
     sessionBranches: defineChannel({

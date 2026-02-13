@@ -8,6 +8,7 @@ import {
 } from "@lab/sandbox-docker";
 import { Sandbox } from "@lab/sandbox-sdk";
 import { RedisClient } from "bun";
+import { createAcpClient } from "./acp/client";
 import { createAuth } from "./auth";
 import { ApiServer } from "./clients/server";
 import type { env } from "./env";
@@ -15,13 +16,11 @@ import { widelog } from "./logging";
 import { BrowserServiceManager } from "./managers/browser-service.manager";
 import { PoolManager } from "./managers/pool.manager";
 import { SessionLifecycleManager } from "./managers/session-lifecycle.manager";
+import { AcpMonitor } from "./monitors/acp.monitor";
 import { ContainerMonitor } from "./monitors/container.monitor";
 import { LogMonitor } from "./monitors/log.monitor";
 import { NetworkReconcileMonitor } from "./monitors/network-reconcile.monitor";
-import { SandboxAgentMonitor } from "./monitors/sandbox-agent.monitor";
 import { createDefaultPromptService } from "./prompts/builder";
-import { SandboxAgentClientResolver } from "./sandbox-agent/client-resolver";
-import { SandboxAgentContainerManager } from "./sandbox-agent/container-manager";
 import { ProxyManager } from "./services/proxy.service";
 import { DeferredPublisher } from "./shared/deferred-publisher";
 import { SessionStateStore } from "./state/session-state-store";
@@ -68,13 +67,14 @@ export const setup = (({ env }) => {
     }),
   });
 
-  const sandboxAgentContainerManager = new SandboxAgentContainerManager(
-    dockerClient,
-    env.ANTHROPIC_API_KEY
-  );
-  const sandboxAgentResolver = new SandboxAgentClientResolver(
-    sandboxAgentContainerManager
-  );
+  if (!(env.ANTHROPIC_API_KEY || env.CLAUDE_CODE_OAUTH_CREDENTIALS)) {
+    throw new Error(
+      "At least one of ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_CREDENTIALS must be set"
+    );
+  }
+
+  const acpUrl = env.SANDBOX_AGENT_URL;
+  const acp = createAcpClient(acpUrl);
 
   const redis = new RedisClient(env.REDIS_URL);
   const sessionStateStore = new SessionStateStore(redis);
@@ -96,26 +96,23 @@ export const setup = (({ env }) => {
     deferredPublisher
   );
 
-  const sidecarProviders = [sandboxAgentContainerManager];
+  const promptService = createDefaultPromptService();
 
-  const sessionLifecycle = new SessionLifecycleManager(
+  const sessionLifecycle = new SessionLifecycleManager({
     sandbox,
     proxyManager,
-    browserService,
+    browserServiceManager: browserService,
     deferredPublisher,
     sessionStateStore,
-    sidecarProviders
-  );
+    acp,
+    promptService,
+    mcpUrl: env.SANDBOX_AGENT_MCP_URL,
+  });
 
   const logMonitor = new LogMonitor(sandbox, deferredPublisher);
   const containerMonitor = new ContainerMonitor(sandbox, deferredPublisher);
-  const sandboxAgentMonitor = new SandboxAgentMonitor(
-    sandboxAgentResolver,
-    deferredPublisher,
-    sessionStateStore
-  );
+  const acpMonitor = new AcpMonitor(acp, deferredPublisher, sessionStateStore);
 
-  const promptService = createDefaultPromptService();
   const imageStore = createImageStoreFromEnv();
 
   const poolManager = new PoolManager(
@@ -143,6 +140,7 @@ export const setup = (({ env }) => {
       },
       frontendUrl: env.FRONTEND_URL,
       auth,
+      mcpUrl: env.SANDBOX_AGENT_MCP_URL,
     },
     {
       browserService,
@@ -150,8 +148,7 @@ export const setup = (({ env }) => {
       poolManager,
       logMonitor,
       sandbox,
-      sandboxAgentResolver,
-      sandboxAgentContainerManager,
+      acp,
       promptService,
       imageStore,
       widelog,
@@ -168,7 +165,7 @@ export const setup = (({ env }) => {
     poolManager,
     logMonitor,
     containerMonitor,
-    sandboxAgentMonitor,
+    acpMonitor,
     networkReconcileMonitor: new NetworkReconcileMonitor(sandbox, [
       env.BROWSER_CONTAINER_NAME,
       env.PROXY_CONTAINER_NAME,

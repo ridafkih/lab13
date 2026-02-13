@@ -4,50 +4,13 @@ import type { Widelog as WidelogBase } from "@lab/widelogger";
 
 export type { Sandbox } from "@lab/sandbox-sdk";
 
-export interface SandboxAgentClient {
-  baseUrl: string;
-  createSession(
-    sessionId: string,
-    config: {
-      agent: string;
-      permissionMode?: string;
-      model?: string;
-      systemPrompt?: string;
-    }
-  ): Promise<void>;
-  postMessage(sessionId: string, message: string): Promise<void>;
-  streamEvents(
-    sessionId: string,
-    options?: { offset?: number; signal?: AbortSignal }
-  ): AsyncIterable<SandboxAgentEvent>;
-  getEvents(
-    sessionId: string,
-    options?: { offset?: number }
-  ): Promise<SandboxAgentEvent[]>;
-  deleteSession(sessionId: string): Promise<void>;
-  replyPermission(
-    sessionId: string,
-    permissionId: string,
-    reply: "once" | "always" | "reject"
-  ): Promise<void>;
-  replyQuestion(
-    sessionId: string,
-    questionId: string,
-    answers: Record<string, string>
-  ): Promise<void>;
-  rejectQuestion(sessionId: string, questionId: string): Promise<void>;
-  listAgents(): Promise<SandboxAgentInfo[]>;
-  listModels(agent: string): Promise<SandboxAgentModel[]>;
-  readFile(path: string): Promise<string>;
-}
-
-export interface SandboxAgentEvent {
+export interface AcpEvent {
   type: string;
   sequence: number;
   data: Record<string, unknown>;
 }
 
-export interface SandboxAgentInfo {
+export interface AcpInfo {
   id: string;
   name: string;
   installed: boolean;
@@ -57,21 +20,9 @@ export interface SandboxAgentInfo {
   };
 }
 
-export interface SandboxAgentModel {
+export interface AcpModel {
   id: string;
   name: string;
-}
-
-export interface ContentPart {
-  type: string;
-  [key: string]: unknown;
-}
-
-export interface SandboxAgentItem {
-  id: string;
-  role: "user" | "assistant";
-  status: "in_progress" | "completed";
-  content: ContentPart[];
 }
 
 export type Publisher = PublisherBase<AppSchema>;

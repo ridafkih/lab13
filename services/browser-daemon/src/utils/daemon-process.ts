@@ -22,6 +22,11 @@ interface WorkerMessage {
   error?: string;
 }
 
+interface CommandResponsePayload {
+  requestId: string;
+  response: Response;
+}
+
 export interface DaemonWorkerHandle {
   worker: Worker;
   sessionId: string;
@@ -64,6 +69,85 @@ function buildWorkerConfig(
   return config;
 }
 
+function toLogPayload(data: unknown): Record<string, unknown> {
+  if (typeof data !== "object" || data === null) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(data));
+}
+
+function logWorkerMessage(data: unknown): void {
+  const logPayload = toLogPayload(data);
+  const { level, ...logData } = logPayload;
+  widelog.context(() => {
+    for (const [key, value] of Object.entries(logData)) {
+      if (
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean"
+      ) {
+        widelog.set(key, value);
+      }
+    }
+    if (level === "error") {
+      widelog.set("outcome", "error");
+    }
+    widelog.flush();
+  });
+}
+
+function resolveCommandResponse(
+  data: unknown,
+  pendingCommands: Map<
+    string,
+    { resolve: (response: Response) => void; reject: (error: Error) => void }
+  >
+): void {
+  if (!isCommandResponsePayload(data)) {
+    return;
+  }
+
+  const pending = pendingCommands.get(data.requestId);
+  if (!pending) {
+    return;
+  }
+
+  pendingCommands.delete(data.requestId);
+  pending.resolve(data.response);
+}
+
+function isCommandResponsePayload(
+  value: unknown
+): value is CommandResponsePayload {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  return (
+    "requestId" in value &&
+    typeof value.requestId === "string" &&
+    "response" in value
+  );
+}
+
+function notifyHandlers(
+  handlers: Iterable<WorkerMessageHandler>,
+  message: WorkerMessage
+): void {
+  for (const handler of handlers) {
+    try {
+      handler(message);
+    } catch (error) {
+      widelog.context(() => {
+        widelog.set("event_name", "daemon.message_handler_error");
+        widelog.set("outcome", "error");
+        widelog.set("error_message", getErrorMessage(error));
+        widelog.flush();
+      });
+    }
+  }
+}
+
 export function spawnDaemon(options: SpawnOptions): DaemonWorkerHandle {
   const { sessionId, streamPort, cdpPort, profileDir } = options;
   const config = buildWorkerConfig(sessionId, streamPort, cdpPort, profileDir);
@@ -85,49 +169,16 @@ export function spawnDaemon(options: SpawnOptions): DaemonWorkerHandle {
     }
 
     if (event.data.type === "log") {
-      const { level, ...logData } = event.data.data as {
-        level: string;
-        [key: string]: unknown;
-      };
-      widelog.context(() => {
-        for (const [key, value] of Object.entries(logData)) {
-          if (
-            typeof value === "string" ||
-            typeof value === "number" ||
-            typeof value === "boolean"
-          ) {
-            widelog.set(key, value);
-          }
-        }
-        if (level === "error") {
-          widelog.set("outcome", "error");
-        }
-        widelog.flush();
-      });
+      logWorkerMessage(event.data.data);
       return;
     }
 
     if (event.data.type === "commandResponse") {
-      const data = event.data.data as
-        | { requestId: string; response: Response }
-        | undefined;
-      if (data?.requestId) {
-        const pending = pendingCommands.get(data.requestId);
-        if (pending) {
-          pendingCommands.delete(data.requestId);
-          pending.resolve(data.response);
-        }
-      }
+      resolveCommandResponse(event.data.data, pendingCommands);
       return;
     }
 
-    for (const handler of messageHandlers) {
-      try {
-        handler(event.data);
-      } catch {
-        // Message handler errors are non-critical
-      }
-    }
+    notifyHandlers(messageHandlers, event.data);
   };
 
   worker.onerror = (error) => {

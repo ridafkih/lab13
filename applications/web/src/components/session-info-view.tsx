@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { BrowserStreamView } from "@/components/browser-stream";
 import { DefaultContainerLogs } from "@/components/container-logs";
 import { SessionInfoPane } from "@/components/session-info-pane";
+import { useMultiplayer } from "@/lib/multiplayer";
 import { useFileStatuses } from "@/lib/use-file-statuses";
 
 interface SessionContainer {
@@ -30,6 +31,8 @@ export function SessionInfoView({
 }: SessionInfoViewProps) {
   const router = useRouter();
   const { files: changedFiles } = useFileStatuses(session.id);
+  const { useChannel } = useMultiplayer();
+  const tasks = useChannel("sessionTasks", { uuid: session.id });
   const links = containers.flatMap((container) =>
     container.urls.map(({ url }) => url)
   );
@@ -97,7 +100,18 @@ export function SessionInfoView({
 
       <SessionInfoPane.Section>
         <SessionInfoPane.SectionHeader>Tasks</SessionInfoPane.SectionHeader>
-        <SessionInfoPane.Empty>No tasks yet</SessionInfoPane.Empty>
+        <SessionInfoPane.ItemList
+          emptyMessage="No tasks yet"
+          items={tasks}
+          renderItem={(task) => (
+            <SessionInfoPane.TaskItem
+              key={task.id}
+              status={task.status}
+              title={task.content}
+            />
+          )}
+          scrollable
+        />
       </SessionInfoPane.Section>
 
       <SessionInfoPane.Section>

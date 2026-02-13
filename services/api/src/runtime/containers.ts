@@ -219,10 +219,7 @@ export function initializeSessionContainers(
       widelog.set("outcome", "error");
       widelog.errorFields(error);
       if (error instanceof CircularDependencyError) {
-        widelog.set(
-          "circular_dependency",
-          (error as CircularDependencyError).cycle.join(" -> ")
-        );
+        widelog.set("circular_dependency", error.cycle.join(" -> "));
       }
       await handleInitializationError(
         sessionId,

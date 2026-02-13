@@ -2,12 +2,14 @@ import type { DaemonEvent, DaemonEventType } from "../types/orchestrator";
 
 export type DaemonEventHandler = (event: DaemonEvent) => void;
 
-const validEventTypes: DaemonEventType[] = [
-  "daemon:started",
-  "daemon:ready",
-  "daemon:stopped",
-  "daemon:error",
-];
+function isValidDaemonEventType(value: unknown): value is DaemonEventType {
+  return (
+    value === "daemon:started" ||
+    value === "daemon:ready" ||
+    value === "daemon:stopped" ||
+    value === "daemon:error"
+  );
+}
 
 function isDaemonEvent(value: unknown): value is DaemonEvent {
   if (typeof value !== "object" || value === null) {
@@ -22,7 +24,7 @@ function isDaemonEvent(value: unknown): value is DaemonEvent {
   if (typeof value.timestamp !== "number") {
     return false;
   }
-  if (!validEventTypes.includes(value.type as DaemonEventType)) {
+  if (!isValidDaemonEventType(value.type)) {
     return false;
   }
   return true;
@@ -44,8 +46,11 @@ export const createDaemonEventSubscriber = (
 ): DaemonEventSubscriber => {
   const handlers = new Set<DaemonEventHandler>();
   const reconnectDelayMs = config.reconnectDelayMs ?? 1000;
-  const state = {
-    abortController: null as AbortController | null,
+  const state: {
+    abortController: AbortController | null;
+    shouldReconnect: boolean;
+  } = {
+    abortController: null,
     shouldReconnect: false,
   };
 

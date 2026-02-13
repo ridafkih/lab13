@@ -1,12 +1,11 @@
 import { LIMITS } from "../config/constants";
 import { widelog } from "../logging";
-import { complete } from "../orchestration/llm";
 import {
   fetchSessionMessages,
   type ReconstructedMessage,
-} from "../orchestration/sandbox-agent-messages";
+} from "../orchestration/acp-messages";
+import { complete } from "../orchestration/llm";
 import { findSessionById } from "../repositories/session.repository";
-import type { SandboxAgentClientResolver } from "../sandbox-agent/client-resolver";
 import { MESSAGE_ROLE } from "../types/message";
 
 interface TaskSummary {
@@ -19,14 +18,13 @@ interface GenerateSummaryOptions {
   sessionId: string;
   originalTask: string;
   platformOrigin?: string;
-  sandboxAgentResolver: SandboxAgentClientResolver;
 }
 
 function formatConversationForLLM(messages: ReconstructedMessage[]): string {
   return messages
-    .map((msg) => {
-      const role = msg.role === MESSAGE_ROLE.USER ? "User" : "Assistant";
-      return `${role}: ${msg.content}`;
+    .map((message) => {
+      const role = message.role === MESSAGE_ROLE.USER ? "User" : "Assistant";
+      return `${role}: ${message.content}`;
     })
     .join("\n\n");
 }
@@ -53,8 +51,7 @@ function getPlatformGuideline(platform?: string): string {
 export async function generateTaskSummary(
   options: GenerateSummaryOptions
 ): Promise<TaskSummary> {
-  const { sessionId, originalTask, platformOrigin, sandboxAgentResolver } =
-    options;
+  const { sessionId, originalTask, platformOrigin } = options;
   const session = await findSessionById(sessionId);
 
   if (!session?.sandboxSessionId) {
@@ -66,11 +63,7 @@ export async function generateTaskSummary(
   }
 
   try {
-    const messages = await fetchSessionMessages(
-      sandboxAgentResolver,
-      sessionId,
-      session.sandboxSessionId
-    );
+    const messages = await fetchSessionMessages(sessionId);
 
     if (messages.length === 0) {
       return {

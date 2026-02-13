@@ -1,0 +1,9 @@
+{
+  "name": "@lab/acp-proxy",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts"
+  }
+}

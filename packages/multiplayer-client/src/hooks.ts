@@ -55,6 +55,13 @@ function toStringRecord(obj: Record<string, unknown>): Record<string, string> {
   return result;
 }
 
+function normalizeParams(value: unknown): Record<string, unknown> {
+  if (typeof value !== "object" || value === null) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(value));
+}
+
 export function createHooks<S extends Schema>(schema: S) {
   type ClientMessage = ClientMessageOf<S>;
 
@@ -88,7 +95,7 @@ export function createHooks<S extends Schema>(schema: S) {
         throw new Error(`Unknown channel: ${channelName}`);
       }
 
-      const resolvedParams = (params ?? {}) as Record<string, unknown>;
+      const resolvedParams = normalizeParams(params);
       const resolvedOptions = options ?? {};
       const isInvalidParam = (value: unknown) => value === "" || value == null;
       const hasInvalidParams =
@@ -250,11 +257,23 @@ function extractItem(
   }
 }
 
+function isDeltaType(value: unknown): value is DeltaType {
+  return (
+    value === "add" ||
+    value === "update" ||
+    value === "remove" ||
+    value === "append"
+  );
+}
+
 function applyArrayDelta(
   array: unknown[],
   delta: Record<string, unknown>
 ): unknown[] {
-  const type = delta.type as DeltaType;
+  const type = delta.type;
+  if (!isDeltaType(type)) {
+    return array;
+  }
   const item = extractItem(delta);
 
   switch (type) {

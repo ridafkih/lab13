@@ -1,4 +1,5 @@
-import type { SandboxAgentClientResolver } from "../sandbox-agent/client-resolver";
+import type { AcpClient } from "../acp/client";
+import { findSessionById } from "../repositories/session.repository";
 import { ExternalServiceError } from "../shared/errors";
 import type { SessionStateStore } from "../state/session-state-store";
 import type { Publisher } from "../types/dependencies";
@@ -7,7 +8,7 @@ interface SendMessageOptions {
   sessionId: string;
   sandboxSessionId: string;
   content: string;
-  sandboxAgentResolver: SandboxAgentClientResolver;
+  acp: AcpClient;
   publisher: Publisher;
   sessionStateStore: SessionStateStore;
 }
@@ -15,23 +16,22 @@ interface SendMessageOptions {
 export async function sendMessageToSession(
   options: SendMessageOptions
 ): Promise<void> {
-  const {
-    sessionId,
-    sandboxSessionId,
-    content,
-    sandboxAgentResolver,
-    publisher,
-    sessionStateStore,
-  } = options;
+  const { sessionId, content, acp, publisher, sessionStateStore } = options;
 
-  const sandboxAgent = await sandboxAgentResolver.getClient(sessionId);
+  const session = await findSessionById(sessionId);
+  if (!session?.sandboxSessionId) {
+    throw new ExternalServiceError(
+      `No sandbox session for session ${sessionId}`,
+      "SANDBOX_SESSION_MISSING"
+    );
+  }
 
   try {
-    await sandboxAgent.postMessage(sandboxSessionId, content);
+    await acp.sendMessage(sessionId, content);
   } catch (error) {
     throw new ExternalServiceError(
       `Failed to send message to session: ${error instanceof Error ? error.message : String(error)}`,
-      "SANDBOX_AGENT_PROMPT_FAILED"
+      "SANDBOX_PROMPT_FAILED"
     );
   }
 

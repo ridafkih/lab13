@@ -17,6 +17,7 @@ const toolRenderers: Record<string, ComponentType<ToolRendererProps>> = {
   read: ReadRenderer,
   write: WriteRenderer,
   edit: EditRenderer,
+  patch: EditRenderer,
   grep: GrepRenderer,
   glob: GlobRenderer,
   webfetch: WebFetchRenderer,

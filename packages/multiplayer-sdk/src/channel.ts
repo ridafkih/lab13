@@ -33,7 +33,15 @@ export function parsePath(
   if (!match) {
     return null;
   }
-  return match.pathname.groups as Record<string, string>;
+  const groups = Object.fromEntries(Object.entries(match.pathname.groups));
+  const parsedGroups: Record<string, string> = {};
+  for (const [key, value] of Object.entries(groups)) {
+    if (typeof value !== "string") {
+      return null;
+    }
+    parsedGroups[key] = value;
+  }
+  return parsedGroups;
 }
 
 /**

@@ -32,7 +32,7 @@ export async function prepareOrchestration(
     poolManager: input.poolManager,
     modelId: input.modelId,
     createModel: () => createLanguageModel(modelConfig),
-    sandboxAgentResolver: input.sandboxAgentResolver,
+    acp: input.acp,
     publisher: input.publisher,
     imageStore: input.imageStore,
     sessionStateStore: input.sessionStateStore,

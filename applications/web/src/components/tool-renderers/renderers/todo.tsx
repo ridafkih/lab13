@@ -30,6 +30,13 @@ const statusIcons = {
   completed: CheckCircle2,
 };
 
+function toTodoStatus(value: string): keyof typeof statusIcons {
+  if (value === "pending" || value === "in_progress" || value === "completed") {
+    return value;
+  }
+  return "pending";
+}
+
 function TodoRenderer({ input, error }: ToolRendererProps) {
   const todos = getArray<TodoItem>(input, "todos") ?? [];
   const subject = getString(input, "subject");
@@ -58,13 +65,12 @@ function TodoRenderer({ input, error }: ToolRendererProps) {
         <div className="flex items-start gap-2 px-4 py-1">
           {inputStatus &&
             (() => {
-              const Icon =
-                statusIcons[inputStatus as keyof typeof statusIcons] ?? Circle;
+              const normalizedStatus = toTodoStatus(inputStatus);
+              const Icon = statusIcons[normalizedStatus] ?? Circle;
               return (
                 <Icon
                   className={statusIcon({
-                    status:
-                      (inputStatus as keyof typeof statusIcons) ?? "pending",
+                    status: normalizedStatus,
                   })}
                 />
               );

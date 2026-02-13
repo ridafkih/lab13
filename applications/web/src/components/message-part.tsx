@@ -12,7 +12,7 @@ import Image from "next/image";
 import { createContext, memo, type ReactNode, use, useState } from "react";
 import { tv } from "tailwind-variants";
 import { getToolRenderer } from "@/components/tool-renderers/registry";
-import { cn } from "@/lib/cn";
+import type { ToolStatus } from "@/components/tool-renderers/types";
 import type {
   ContentPart,
   FileRefContentPart,
@@ -21,7 +21,7 @@ import type {
   TextContentPart,
   ToolCallContentPart,
   ToolResultContentPart,
-} from "@/lib/sandbox-agent-types";
+} from "@/lib/acp-types";
 import {
   isFileRefPart,
   isImagePart,
@@ -29,7 +29,8 @@ import {
   isTextPart,
   isToolCallPart,
   isToolResultPart,
-} from "@/lib/sandbox-agent-types";
+} from "@/lib/acp-types";
+import { cn } from "@/lib/cn";
 import { Markdown } from "./markdown";
 
 function getToolStatus(
@@ -216,14 +217,28 @@ const fileToolIcons = {
   edit: { icon: FileEdit, color: "text-yellow-500" },
   write: { icon: FilePlus, color: "text-green-500" },
   read: { icon: File, color: "text-text-muted" },
-} as const;
+};
+
+function hasOwnKey<T extends object>(
+  source: T,
+  key: PropertyKey
+): key is keyof T {
+  return Object.hasOwn(source, key);
+}
+
+function resolveFileToolConfig(toolName: string) {
+  if (!hasOwnKey(fileToolIcons, toolName)) {
+    return undefined;
+  }
+  return fileToolIcons[toolName];
+}
 
 function MessagePartToolStatus() {
   const { meta } = useTool();
   const status = meta.part.status;
   const toolName = meta.part.name;
 
-  const fileToolConfig = fileToolIcons[toolName as keyof typeof fileToolIcons];
+  const fileToolConfig = resolveFileToolConfig(toolName);
 
   if (status === "in_progress") {
     if (fileToolConfig) {
@@ -273,7 +288,7 @@ function getString(obj: unknown, key: string): string | null {
   if (typeof obj !== "object" || obj === null) {
     return null;
   }
-  const value = (obj as Record<string, unknown>)[key];
+  const value = Object.fromEntries(Object.entries(obj))[key];
   return typeof value === "string" ? value : null;
 }
 
@@ -370,7 +385,19 @@ interface ToolRendererProps {
   input?: Record<string, unknown>;
   output?: string | null;
   error?: string | null;
-  status: string;
+  status: ToolStatus;
+}
+
+function toToolStatus(status: string): ToolStatus {
+  if (
+    status === "pending" ||
+    status === "running" ||
+    status === "completed" ||
+    status === "error"
+  ) {
+    return status;
+  }
+  return "pending";
 }
 
 function MessagePartToolRenderer({
@@ -388,7 +415,7 @@ function MessagePartToolRenderer({
       error={error}
       input={input}
       output={output}
-      status={status as "pending" | "running" | "completed" | "error"}
+      status={toToolStatus(status)}
       tool={tool}
     />
   );
@@ -400,7 +427,7 @@ const MessagePartFileRef = memo(function MessagePartFileRef({
   part: FileRefContentPart;
 }) {
   const action = part.action ?? "read";
-  const config = fileToolIcons[action as keyof typeof fileToolIcons] ?? {
+  const config = resolveFileToolConfig(action) ?? {
     icon: File,
     color: "text-text-muted",
   };

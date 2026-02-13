@@ -2,10 +2,7 @@
 
 import { useEffect } from "react";
 import useSWR, { useSWRConfig } from "swr";
-import {
-  getAgentApiUrl,
-  useSandboxAgentSession,
-} from "./sandbox-agent-session";
+import { getAgentApiUrl, useAcpSession } from "./acp-session";
 
 type FileStatus = "added" | "modified" | "deleted";
 
@@ -34,7 +31,7 @@ function normalizePath(path: string): string {
 async function fetchFileStatuses(sessionId: string): Promise<ChangedFile[]> {
   const apiUrl = getAgentApiUrl();
   const response = await fetch(
-    `${apiUrl}/sandbox-agent/files/status?sessionId=${encodeURIComponent(sessionId)}`,
+    `${apiUrl}/acp/files/status?sessionId=${encodeURIComponent(sessionId)}`,
     {
       headers: { "X-Lab-Session-Id": sessionId },
     }
@@ -72,7 +69,7 @@ function getFileStatusesKey(sessionId: string | null): string | null {
 }
 
 export function useFileStatuses(sessionId: string | null) {
-  const { subscribe } = useSandboxAgentSession();
+  const { subscribe } = useAcpSession();
   const { mutate } = useSWRConfig();
 
   const { data, error, isLoading } = useSWR<ChangedFile[]>(

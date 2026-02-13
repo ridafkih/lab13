@@ -1,24 +1,18 @@
-import { TIMING } from "../config/constants";
-import { widelog } from "../logging";
-import {
-  findRunningSessions,
-  findSessionById,
-} from "../repositories/session.repository";
-import type { SandboxAgentClientResolver } from "../sandbox-agent/client-resolver";
-import {
-  extractTextFromEvent,
-  isKnownEventType,
-} from "../sandbox-agent/event-parser";
+import { type AcpClient, envelopeToSandboxEvent } from "../acp/client";
+import { extractTextFromEvent, isKnownEventType } from "../acp/event-parser";
 import {
   publishInferenceStatus,
   publishSessionCompletion,
-} from "../sandbox-agent/publisher-adapter";
+} from "../acp/publisher-adapter";
+import { TIMING } from "../config/constants";
+import { widelog } from "../logging";
+import { findRunningSessions } from "../repositories/session.repository";
 import type { DeferredPublisher } from "../shared/deferred-publisher";
 import {
   INFERENCE_STATUS,
   type SessionStateStore,
 } from "../state/session-state-store";
-import type { Publisher, SandboxAgentClient } from "../types/dependencies";
+import type { AcpEvent, Publisher } from "../types/dependencies";
 
 class CompletionTimerManager {
   private readonly timers = new Map<string, NodeJS.Timeout>();
@@ -69,98 +63,64 @@ class CompletionTimerManager {
 }
 
 class SessionTracker {
-  private readonly abortController = new AbortController();
-
   readonly labSessionId: string;
-  private readonly sandboxAgentResolver: SandboxAgentClientResolver;
+  private unsubscribe: (() => void) | null = null;
+  private stopped = false;
+
+  private readonly acp: AcpClient;
   private readonly getPublisher: () => Publisher;
   private readonly completionTimerManager: CompletionTimerManager;
   private readonly sessionStateStore: SessionStateStore;
 
   constructor(
     labSessionId: string,
-    sandboxAgentResolver: SandboxAgentClientResolver,
+    acp: AcpClient,
     getPublisher: () => Publisher,
     completionTimerManager: CompletionTimerManager,
     sessionStateStore: SessionStateStore
   ) {
     this.labSessionId = labSessionId;
-    this.sandboxAgentResolver = sandboxAgentResolver;
+    this.acp = acp;
     this.getPublisher = getPublisher;
     this.completionTimerManager = completionTimerManager;
     this.sessionStateStore = sessionStateStore;
-    this.monitor();
+    this.subscribe();
   }
 
   stop(): void {
-    this.abortController.abort();
+    this.stopped = true;
+    if (this.unsubscribe) {
+      this.unsubscribe();
+      this.unsubscribe = null;
+    }
     this.sessionStateStore.clear(this.labSessionId);
     this.completionTimerManager.clearSession(this.labSessionId);
   }
 
   get isActive(): boolean {
-    return !this.abortController.signal.aborted;
+    return !this.stopped;
   }
 
-  private async monitor(): Promise<void> {
-    while (this.isActive) {
-      try {
-        const session = await findSessionById(this.labSessionId);
-        if (!session?.sandboxSessionId) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, TIMING.SANDBOX_AGENT_MONITOR_RETRY_MS)
-          );
-          continue;
-        }
+  private subscribe(): void {
+    if (this.stopped) {
+      return;
+    }
 
-        let client: SandboxAgentClient | null = null;
-        try {
-          client = await this.sandboxAgentResolver.getClient(this.labSessionId);
-        } catch {
-          await new Promise((resolve) =>
-            setTimeout(resolve, TIMING.SANDBOX_AGENT_MONITOR_RETRY_MS)
-          );
-          continue;
-        }
-
-        const events = client.streamEvents(session.sandboxSessionId, {
-          signal: this.abortController.signal,
-        });
-
-        for await (const event of events) {
-          if (!this.isActive) {
-            break;
-          }
-          await this.processEvent(event);
-        }
-      } catch (error) {
-        if (!this.isActive) {
+    this.unsubscribe = this.acp.onSessionEvent(
+      this.labSessionId,
+      (envelope) => {
+        if (this.stopped) {
           return;
         }
-        widelog.context(() => {
-          widelog.set(
-            "event_name",
-            "sandbox_agent_monitor.session_tracker_error"
-          );
-          widelog.set("session_id", this.labSessionId);
-          widelog.set("retry_delay_ms", TIMING.SANDBOX_AGENT_MONITOR_RETRY_MS);
-          widelog.set("outcome", "error");
-          widelog.errorFields(error);
-          widelog.flush();
-        });
-
-        await new Promise((resolve) =>
-          setTimeout(resolve, TIMING.SANDBOX_AGENT_MONITOR_RETRY_MS)
-        );
+        const event = envelopeToSandboxEvent(envelope);
+        if (event) {
+          this.processEvent(event);
+        }
       }
-    }
+    );
   }
 
-  private async processEvent(event: {
-    type: string;
-    sequence: number;
-    data: Record<string, unknown>;
-  }): Promise<void> {
+  private processEvent(event: AcpEvent): void {
     if (!isKnownEventType(event.type)) {
       return;
     }
@@ -169,19 +129,18 @@ class SessionTracker {
       case "turn.started":
       case "item.started":
       case "item.delta":
-        await this.handleActivity(event);
+        this.handleActivity(event);
         break;
 
       case "turn.ended":
-        await this.handleTurnEnded();
+        this.handleTurnEnded();
         break;
 
       case "item.completed":
-        // Track file references for diffs if needed
         break;
 
       case "error":
-        await this.handleError();
+        this.handleError();
         break;
 
       default:
@@ -189,19 +148,17 @@ class SessionTracker {
     }
   }
 
-  private async handleActivity(event: {
-    type: string;
-    data: Record<string, unknown>;
-  }): Promise<void> {
+  private handleActivity(event: AcpEvent): void {
     this.completionTimerManager.cancelCompletion(this.labSessionId);
-    await this.sessionStateStore.setInferenceStatus(
+    this.sessionStateStore.setInferenceStatus(
       this.labSessionId,
       INFERENCE_STATUS.GENERATING
     );
 
     const text = extractTextFromEvent(event as never);
+
     if (text) {
-      await this.sessionStateStore.setLastMessage(this.labSessionId, text);
+      this.sessionStateStore.setLastMessage(this.labSessionId, text);
     }
 
     publishInferenceStatus(
@@ -212,8 +169,8 @@ class SessionTracker {
     );
   }
 
-  private async handleTurnEnded(): Promise<void> {
-    await this.sessionStateStore.setInferenceStatus(
+  private handleTurnEnded(): void {
+    this.sessionStateStore.setInferenceStatus(
       this.labSessionId,
       INFERENCE_STATUS.IDLE
     );
@@ -225,8 +182,8 @@ class SessionTracker {
     this.completionTimerManager.scheduleCompletion(this.labSessionId);
   }
 
-  private async handleError(): Promise<void> {
-    await this.sessionStateStore.setInferenceStatus(
+  private handleError(): void {
+    this.sessionStateStore.setInferenceStatus(
       this.labSessionId,
       INFERENCE_STATUS.IDLE
     );
@@ -239,23 +196,23 @@ class SessionTracker {
   }
 }
 
-export class SandboxAgentMonitor {
+export class AcpMonitor {
   private readonly trackers = new Map<string, SessionTracker>();
   private readonly abortController = new AbortController();
   private readonly completionTimerManager = new CompletionTimerManager(() =>
     this.deferredPublisher.get()
   );
 
-  private readonly sandboxAgentResolver: SandboxAgentClientResolver;
+  private readonly acp: AcpClient;
   private readonly deferredPublisher: DeferredPublisher;
   private readonly sessionStateStore: SessionStateStore;
 
   constructor(
-    sandboxAgentResolver: SandboxAgentClientResolver,
+    acp: AcpClient,
     deferredPublisher: DeferredPublisher,
     sessionStateStore: SessionStateStore
   ) {
-    this.sandboxAgentResolver = sandboxAgentResolver;
+    this.acp = acp;
     this.deferredPublisher = deferredPublisher;
     this.sessionStateStore = sessionStateStore;
   }
@@ -333,7 +290,7 @@ export class SandboxAgentMonitor {
           id,
           new SessionTracker(
             id,
-            this.sandboxAgentResolver,
+            this.acp,
             () => this.deferredPublisher.get(),
             this.completionTimerManager,
             this.sessionStateStore

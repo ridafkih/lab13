@@ -240,7 +240,11 @@ export class PoolManager {
       let currentSize = 0;
 
       try {
-        for (let i = 0; i < maxIterations; i++) {
+        for (
+          let iterationIndex = 0;
+          iterationIndex < maxIterations;
+          iterationIndex++
+        ) {
           currentSize = await countPooledSessions(projectId);
 
           if (currentSize === targetSize) {
@@ -258,7 +262,7 @@ export class PoolManager {
             } else {
               widelog.count("error_count");
               widelog.set(
-                `errors.fill_attempt_${i}`,
+                `errors.fill_attempt_${iterationIndex}`,
                 `creation failed, consecutive_failures=${consecutiveFailures}`
               );
             }

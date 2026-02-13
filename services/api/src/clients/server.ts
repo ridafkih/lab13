@@ -17,6 +17,8 @@ import {
   password,
   serve,
 } from "bun";
+import type { AcpClient } from "../acp/client";
+import { createAcpProxyHandler } from "../acp/handler";
 import type { Auth as BetterAuthInstance } from "../auth";
 import { SERVER } from "../config/constants";
 import { widelog } from "../logging";
@@ -25,9 +27,6 @@ import type { PoolManager } from "../managers/pool.manager";
 import type { SessionLifecycleManager } from "../managers/session-lifecycle.manager";
 import type { LogMonitor } from "../monitors/log.monitor";
 import { reconcileNetworkConnections } from "../runtime/network";
-import type { SandboxAgentClientResolver } from "../sandbox-agent/client-resolver";
-import type { SandboxAgentContainerManager } from "../sandbox-agent/container-manager";
-import { createSandboxAgentProxyHandler } from "../sandbox-agent/handler";
 import { AppError, ServiceUnavailableError } from "../shared/errors";
 import { createChannelRestHandler } from "../snapshots/rest-handler";
 import type { SessionStateStore } from "../state/session-state-store";
@@ -48,6 +47,7 @@ interface ApiServerConfig {
   };
   frontendUrl?: string;
   auth: BetterAuthInstance;
+  mcpUrl?: string;
 }
 
 interface ApiServerServices {
@@ -56,8 +56,7 @@ interface ApiServerServices {
   poolManager: PoolManager;
   logMonitor: LogMonitor;
   sandbox: Sandbox;
-  sandboxAgentResolver: SandboxAgentClientResolver;
-  sandboxAgentContainerManager: SandboxAgentContainerManager;
+  acp: AcpClient;
   promptService: PromptService;
   imageStore?: ImageStore;
   widelog: Widelog;
@@ -98,8 +97,7 @@ export class ApiServer {
       poolManager,
       logMonitor,
       sandbox,
-      sandboxAgentResolver,
-      sandboxAgentContainerManager,
+      acp,
       promptService,
       imageStore,
       sessionStateStore,
@@ -107,11 +105,12 @@ export class ApiServer {
 
     this.publisher = createPublisher(schema, () => this.getServer());
 
-    const handleSandboxAgentProxy = createSandboxAgentProxyHandler({
-      containerManager: sandboxAgentContainerManager,
+    const handleAcpProxy = createAcpProxyHandler({
+      acp,
       publisher: this.publisher,
       promptService,
       sessionStateStore,
+      mcpUrl: this.config.mcpUrl,
     });
 
     const routeContext: RouteContext = {
@@ -121,8 +120,7 @@ export class ApiServer {
       poolManager,
       promptService,
       sandbox,
-      sandboxAgentResolver,
-      sandboxAgentContainerManager,
+      acp,
       publisher: this.publisher,
       logMonitor,
       imageStore,
@@ -137,7 +135,6 @@ export class ApiServer {
     const { websocketHandler, upgrade } = createWebSocketHandlers({
       browserService: browserService.service,
       publisher: this.publisher,
-      sandboxAgentResolver,
       logMonitor,
       proxyBaseUrl,
       sessionStateStore,
@@ -145,7 +142,6 @@ export class ApiServer {
 
     const handleChannelRequest = createChannelRestHandler({
       browserService: browserService.service,
-      sandboxAgentResolver,
       logMonitor,
       proxyBaseUrl,
       sessionStateStore,
@@ -192,7 +188,7 @@ export class ApiServer {
           return Promise.resolve(upgrade(request, this.getServer()));
         }
 
-        if (url.pathname.startsWith("/sandbox-agent/")) {
+        if (url.pathname.startsWith("/acp/")) {
           return this.handleRequestWithWideEvent(request, url, () => {
             this.services.widelog.set("route", "sandbox_agent_proxy");
 
@@ -201,7 +197,7 @@ export class ApiServer {
               this.services.widelog.set("session_id", labSessionId);
             }
 
-            return handleSandboxAgentProxy(request, url);
+            return handleAcpProxy(request, url);
           });
         }
 

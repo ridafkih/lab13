@@ -85,7 +85,7 @@ export async function findAllRunningSessionContainers(): Promise<
   });
 }
 
-export function findAllActiveSessionContainers(): Promise<
+export async function findAllActiveSessionContainers(): Promise<
   {
     id: string;
     sessionId: string;
@@ -93,7 +93,7 @@ export function findAllActiveSessionContainers(): Promise<
     status: string;
   }[]
 > {
-  return db
+  const rows = await db
     .select({
       id: sessionContainers.id,
       sessionId: sessionContainers.sessionId,
@@ -109,9 +109,21 @@ export function findAllActiveSessionContainers(): Promise<
         ]),
         isNotNull(sessionContainers.runtimeId)
       )
-    ) as Promise<
-    { id: string; sessionId: string; runtimeId: string; status: string }[]
-  >;
+    );
+
+  return rows.flatMap((row) => {
+    if (!row.runtimeId) {
+      return [];
+    }
+    return [
+      {
+        id: row.id,
+        sessionId: row.sessionId,
+        runtimeId: row.runtimeId,
+        status: row.status,
+      },
+    ];
+  });
 }
 
 export async function findSessionContainerByRuntimeId(

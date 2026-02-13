@@ -7,7 +7,6 @@ import {
 import type { BrowserService } from "../browser/browser-service";
 import { widelog } from "../logging";
 import type { LogMonitor } from "../monitors/log.monitor";
-import type { SandboxAgentClientResolver } from "../sandbox-agent/client-resolver";
 import { ValidationError } from "../shared/errors";
 import {
   loadProjects,
@@ -16,6 +15,7 @@ import {
   loadSessionLogs,
   loadSessionMetadata,
   loadSessions,
+  loadSessionTasks,
 } from "../snapshots/snapshot-loaders";
 import type { SessionStateStore } from "../state/session-state-store";
 import type { Publisher } from "../types/dependencies";
@@ -27,7 +27,6 @@ export type { Auth } from "../types/websocket";
 interface WebSocketHandlerDeps {
   browserService: BrowserService;
   publisher: Publisher;
-  sandboxAgentResolver: SandboxAgentClientResolver;
   logMonitor: LogMonitor;
   proxyBaseUrl: string;
   sessionStateStore: SessionStateStore;
@@ -37,7 +36,6 @@ export function createWebSocketHandlers(deps: WebSocketHandlerDeps) {
   const {
     browserService,
     publisher,
-    sandboxAgentResolver,
     logMonitor,
     proxyBaseUrl,
     sessionStateStore,
@@ -56,11 +54,7 @@ export function createWebSocketHandlers(deps: WebSocketHandlerDeps) {
         if (!params.uuid) {
           throw new ValidationError("Missing uuid parameter");
         }
-        return loadSessionMetadata(
-          params.uuid,
-          sandboxAgentResolver,
-          sessionStateStore
-        );
+        return loadSessionMetadata(params.uuid, sessionStateStore);
       },
     },
     sessionContainers: {
@@ -82,7 +76,15 @@ export function createWebSocketHandlers(deps: WebSocketHandlerDeps) {
         if (!params.uuid) {
           throw new ValidationError("Missing uuid parameter");
         }
-        return loadSessionChangedFiles(params.uuid, sandboxAgentResolver);
+        return loadSessionChangedFiles();
+      },
+    },
+    sessionTasks: {
+      getSnapshot: ({ params }) => {
+        if (!params.uuid) {
+          throw new ValidationError("Missing uuid parameter");
+        }
+        return loadSessionTasks(params.uuid);
       },
     },
     sessionBranches: {

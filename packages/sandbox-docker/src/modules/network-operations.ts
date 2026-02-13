@@ -186,10 +186,7 @@ export class NetworkOperations {
         try {
           await this.docker
             .getNetwork(networkName)
-            .disconnect({ Container: containerId, Force: true } as Record<
-              string,
-              unknown
-            >);
+            .disconnect({ Container: containerId, Force: true });
         } catch (error) {
           if (isNotFoundError(error)) {
             return;

@@ -1,8 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { findSessionById } from "../../repositories/session.repository";
-import type { SandboxAgentClientResolver } from "../../sandbox-agent/client-resolver";
-import { fetchSessionMessages } from "../sandbox-agent-messages";
+import { fetchSessionMessages } from "../acp-messages";
 
 const inputSchema = z.object({
   sessionId: z.string().describe("The session ID to get messages from"),
@@ -13,9 +12,7 @@ const inputSchema = z.object({
     .describe("Maximum number of messages to return (most recent first)"),
 });
 
-export function createGetSessionMessagesTool(
-  sandboxAgentResolver: SandboxAgentClientResolver
-) {
+export function createGetSessionMessagesTool() {
   return tool({
     description:
       "Gets conversation messages from a session. Returns messages in reverse chronological order (most recent first) with role and content.",
@@ -35,16 +32,12 @@ export function createGetSessionMessagesTool(
       }
 
       try {
-        const messages = await fetchSessionMessages(
-          sandboxAgentResolver,
-          sessionId,
-          session.sandboxSessionId
-        );
+        const messages = await fetchSessionMessages(sessionId);
 
         return {
-          messages: messages.slice(-(limit ?? 20)).map((msg) => ({
-            role: msg.role,
-            content: msg.content,
+          messages: messages.slice(-(limit ?? 20)).map((message) => ({
+            role: message.role,
+            content: message.content,
           })),
         };
       } catch (error) {

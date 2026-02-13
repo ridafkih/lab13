@@ -3,6 +3,7 @@ export interface ExecOptions {
   workdir?: string;
   env?: Record<string, string>;
   tty?: boolean;
+  user?: string;
 }
 
 export interface ExecResult {

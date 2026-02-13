@@ -6,7 +6,7 @@ import { Nav } from "@/components/nav";
 import { ProjectNavigatorView } from "@/components/project-navigator-view";
 import { ProjectsLoadingFallback } from "@/components/suspense-fallbacks";
 import { defaultSettingsTab } from "@/config/settings";
-import { SandboxAgentSessionProvider } from "@/lib/sandbox-agent-session";
+import { AcpSessionProvider } from "@/lib/acp-session";
 
 const navItems = [
   { label: "Home", href: "/" },
@@ -30,7 +30,7 @@ export default function EditorLayout({ children }: { children: ReactNode }) {
     typeof params.sessionId === "string" ? params.sessionId : null;
 
   return (
-    <SandboxAgentSessionProvider sessionId={sessionId}>
+    <AcpSessionProvider sessionId={sessionId}>
       <div className="flex h-screen max-w-full flex-col">
         <Nav items={navItems} />
         <div className="grid h-full min-h-0 max-w-full grid-cols-[2fr_5fr]">
@@ -38,6 +38,6 @@ export default function EditorLayout({ children }: { children: ReactNode }) {
           <main className="flex-1 overflow-x-hidden bg-bg">{children}</main>
         </div>
       </div>
-    </SandboxAgentSessionProvider>
+    </AcpSessionProvider>
   );
 }

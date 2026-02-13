@@ -36,12 +36,21 @@ export function createContainerWithDetails(data: {
   dependencies?: { dependsOnContainerId: string; condition?: string }[];
 }): Promise<Container> {
   return db.transaction(async (tx) => {
+    const existing = await tx
+      .select({ id: containers.id })
+      .from(containers)
+      .where(eq(containers.projectId, data.projectId))
+      .limit(1);
+
+    const isFirstContainer = existing.length === 0;
+
     const [container] = await tx
       .insert(containers)
       .values({
         projectId: data.projectId,
         image: data.image,
         hostname: data.hostname,
+        isWorkspace: isFirstContainer,
       })
       .returning();
     if (!container) {

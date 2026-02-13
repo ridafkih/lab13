@@ -2,13 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
-import { api } from "./api";
 import {
+  createAcpEventParser,
   getAgentApiUrl,
-  parseSSEChunk,
-  useSandboxAgentSession,
-} from "./sandbox-agent-session";
-import type { ContentPart, SandboxAgentEvent } from "./sandbox-agent-types";
+  resetTranslationState,
+  translateAcpEvent,
+  useAcpSession,
+} from "./acp-session";
+import type { AcpEvent, ContentPart } from "./acp-types";
+import { api } from "./api";
 import type { Attachment } from "./use-attachments";
 
 export interface MessageState {
@@ -48,20 +50,23 @@ interface UseAgentResult {
 interface SessionData {
   sandboxSessionId: string;
   messages: MessageState[];
-  lastSequence: number;
 }
 
 function getString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
 
+function getRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(Object.entries(value));
+  }
+  return null;
+}
+
 function extractEventItem(
   eventData: Record<string, unknown>
 ): Record<string, unknown> {
-  if (typeof eventData.item === "object" && eventData.item !== null) {
-    return eventData.item as Record<string, unknown>;
-  }
-  return eventData;
+  return getRecord(eventData.item) ?? eventData;
 }
 
 function extractItemId(
@@ -80,31 +85,24 @@ function extractContentParts(
 function tryParseJson(value: string): Record<string, unknown> {
   try {
     return JSON.parse(value);
-  } catch (error) {
-    console.warn("Failed to parse tool arguments:", error);
+  } catch {
     return {};
   }
 }
 
-const TOOL_CALL_STATUSES = ["in_progress", "completed", "error"] as const;
-type ToolCallStatus = (typeof TOOL_CALL_STATUSES)[number];
+type ToolCallStatus = "in_progress" | "completed" | "error";
 
 function isToolCallStatus(value: unknown): value is ToolCallStatus {
-  return (
-    typeof value === "string" &&
-    TOOL_CALL_STATUSES.includes(value as ToolCallStatus)
-  );
+  return value === "in_progress" || value === "completed" || value === "error";
 }
 
 function normalizeToolCall(raw: Record<string, unknown>): ContentPart {
-  let input: Record<string, unknown> = {};
-  if (typeof raw.arguments === "string") {
-    input = tryParseJson(raw.arguments);
-  } else if (typeof raw.input === "object" && raw.input !== null) {
-    input = raw.input as Record<string, unknown>;
-  }
+  const input =
+    typeof raw.arguments === "string"
+      ? tryParseJson(raw.arguments)
+      : (getRecord(raw.input) ?? {});
   return {
-    type: "tool_call" as const,
+    type: "tool_call",
     id: getString(raw.call_id ?? raw.id),
     name: getString(raw.name),
     input,
@@ -114,7 +112,7 @@ function normalizeToolCall(raw: Record<string, unknown>): ContentPart {
 
 function normalizeToolResult(raw: Record<string, unknown>): ContentPart {
   return {
-    type: "tool_result" as const,
+    type: "tool_result",
     tool_call_id: getString(raw.call_id ?? raw.tool_call_id),
     output: typeof raw.output === "string" ? raw.output : undefined,
     error: typeof raw.error === "string" ? raw.error : undefined,
@@ -122,7 +120,7 @@ function normalizeToolResult(raw: Record<string, unknown>): ContentPart {
 }
 
 function normalizeTextPart(raw: Record<string, unknown>): ContentPart {
-  return { type: "text" as const, text: getString(raw.text) };
+  return { type: "text", text: getString(raw.text) };
 }
 
 function normalizeSinglePart(raw: Record<string, unknown>): ContentPart {
@@ -136,14 +134,9 @@ function normalizeSinglePart(raw: Record<string, unknown>): ContentPart {
   if (type === "text") {
     return normalizeTextPart(raw);
   }
-  return { type: "text" as const, text: "" };
+  return { type: "text", text: "" };
 }
 
-/**
- * Normalize raw content parts from Sandbox Agent events into the ContentPart
- * types expected by the frontend. Sandbox Agent uses `call_id` and `arguments`
- * (JSON string) while our types use `id` and `input` (parsed object).
- */
 function normalizeContentParts(
   rawParts: Record<string, unknown>[]
 ): ContentPart[] {
@@ -178,7 +171,7 @@ function resolveToolCallStatuses(parts: ContentPart[]): ContentPart[] {
       if (result) {
         return {
           ...part,
-          status: result.error ? ("error" as const) : ("completed" as const),
+          status: result.error ? "error" : "completed",
         };
       }
     }
@@ -187,212 +180,196 @@ function resolveToolCallStatuses(parts: ContentPart[]): ContentPart[] {
 }
 
 /**
- * Determines whether a Sandbox Agent item should be merged into the current
- * assistant message (tool calls, tool results) or create a new message.
+ * Idempotent message accumulator. Processes events sequentially and builds
+ * the message list deterministically based on event data properties alone.
+ *
+ * Key behavior:
+ * - `turn.started` resets the current assistant context
+ * - `kind: "message"` items create new messages
+ * - `kind: "tool_call"` / `kind: "tool_result"` items merge into the
+ *    current assistant message
+ * - Text deltas arriving after tool parts split into a new message,
+ *   so each "step" (text + tools) renders as a distinct chat bubble
+ *
+ * Both replay and SSE use this same accumulator, guaranteeing identical output.
  */
-function shouldMergeItem(item: Record<string, unknown>): boolean {
-  return (
-    item.kind === "tool_call" ||
-    item.kind === "tool_result" ||
-    item.role === "tool"
-  );
-}
+class MessageAccumulator {
+  messages: MessageState[] = [];
+  private readonly itemIdToMessageId = new Map<string, string>();
+  private currentAssistantId: string | null = null;
 
-function handleReplayItemStarted(
-  event: SandboxAgentEvent,
-  messages: MessageState[],
-  itemIdToMessageId: Map<string, string>,
-  currentAssistantId: { value: string | null }
-): void {
-  const item = extractEventItem(event.data);
-  const role =
-    item.role === "user" ? ("user" as const) : ("assistant" as const);
-  const itemId = extractItemId(item, `item-${event.sequence}`);
-  const content = normalizeContentParts(extractContentParts(item));
-
-  if (role === "user") {
-    messages.push({ id: itemId, role, parts: content });
-    itemIdToMessageId.set(itemId, itemId);
-    return;
-  }
-
-  if (shouldMergeItem(item) && currentAssistantId.value) {
-    itemIdToMessageId.set(itemId, currentAssistantId.value);
-    const assistantMsg = messages.find(
-      (m) => m.id === currentAssistantId.value
-    );
-    if (assistantMsg && content.length > 0) {
-      assistantMsg.parts = [...assistantMsg.parts, ...content];
-    }
-    return;
-  }
-
-  messages.push({ id: itemId, role, parts: content });
-  itemIdToMessageId.set(itemId, itemId);
-  currentAssistantId.value = itemId;
-}
-
-function handleReplayItemDelta(
-  event: SandboxAgentEvent,
-  messages: MessageState[],
-  itemIdToMessageId: Map<string, string>
-): void {
-  const rawItemId = getString(event.data.item_id) || null;
-  const deltaText = getString(event.data.delta) || null;
-
-  if (!(rawItemId && deltaText)) {
-    return;
-  }
-
-  const messageId = itemIdToMessageId.get(rawItemId) ?? rawItemId;
-  const message = messages.find((m) => m.id === messageId);
-  if (!message) {
-    return;
-  }
-
-  const lastPart = message.parts.at(-1);
-  if (lastPart && lastPart.type === "text") {
-    lastPart.text += deltaText;
-  } else {
-    message.parts.push({ type: "text", text: deltaText });
-  }
-}
-
-function handleReplayItemCompleted(
-  event: SandboxAgentEvent,
-  messages: MessageState[],
-  itemIdToMessageId: Map<string, string>
-): void {
-  const item = extractEventItem(event.data);
-  const rawItemId = getString(item.item_id) || null;
-  const content = normalizeContentParts(extractContentParts(item));
-
-  if (!rawItemId || content.length === 0) {
-    return;
-  }
-
-  const messageId = itemIdToMessageId.get(rawItemId) ?? rawItemId;
-  const message = messages.find((m) => m.id === messageId);
-  if (!message) {
-    return;
-  }
-
-  if (messageId === rawItemId) {
-    if (message.parts.length === 0) {
-      message.parts = [...content];
-    }
-  } else {
-    message.parts = [...message.parts, ...content];
-  }
-}
-
-function reconstructMessagesFromEvents(
-  events: SandboxAgentEvent[]
-): MessageState[] {
-  const messages: MessageState[] = [];
-  const itemIdToMessageId = new Map<string, string>();
-  const currentAssistantId = { value: null as string | null };
-
-  for (const event of events) {
+  processEvent(event: AcpEvent): void {
     switch (event.type) {
+      case "turn.started":
+        this.currentAssistantId = null;
+        break;
       case "item.started":
-        handleReplayItemStarted(
-          event,
-          messages,
-          itemIdToMessageId,
-          currentAssistantId
-        );
+        this.handleItemStarted(event);
         break;
       case "item.delta":
-        handleReplayItemDelta(event, messages, itemIdToMessageId);
+        this.handleItemDelta(event);
         break;
       case "item.completed":
-        handleReplayItemCompleted(event, messages, itemIdToMessageId);
+        this.handleItemCompleted(event);
         break;
       default:
         break;
     }
   }
 
-  for (const message of messages) {
-    message.parts = resolveToolCallStatuses(message.parts);
+  getMessages(): MessageState[] {
+    return this.messages.map((message) => ({
+      ...message,
+      parts: resolveToolCallStatuses(message.parts),
+    }));
   }
 
-  return messages;
+  private handleItemStarted(event: AcpEvent): void {
+    const item = extractEventItem(event.data);
+    const itemId = extractItemId(item, `item-${event.sequence}`);
+    const kind = getString(item.kind);
+    const role = getString(item.role);
+    const content = normalizeContentParts(extractContentParts(item));
+
+    if (role === "user" && kind === "message") {
+      this.messages.push({ id: itemId, role: "user", parts: content });
+      this.itemIdToMessageId.set(itemId, itemId);
+      return;
+    }
+
+    if (kind === "message") {
+      this.messages.push({ id: itemId, role: "assistant", parts: content });
+      this.itemIdToMessageId.set(itemId, itemId);
+      this.currentAssistantId = itemId;
+      return;
+    }
+
+    // tool_call or tool_result — merge into the current assistant message
+    if (this.currentAssistantId) {
+      this.itemIdToMessageId.set(itemId, this.currentAssistantId);
+      const activeAssistantMessage = this.messages.find(
+        (message) => message.id === this.currentAssistantId
+      );
+      if (activeAssistantMessage && content.length > 0) {
+        activeAssistantMessage.parts = [
+          ...activeAssistantMessage.parts,
+          ...content,
+        ];
+      }
+    }
+  }
+
+  private handleItemDelta(event: AcpEvent): void {
+    const rawItemId = getString(event.data.item_id) || null;
+    const deltaText = getString(event.data.delta) || null;
+    if (!(rawItemId && deltaText)) {
+      return;
+    }
+
+    const messageId = this.itemIdToMessageId.get(rawItemId) ?? rawItemId;
+    const existingMessage = this.messages.find(
+      (message) => message.id === messageId
+    );
+    if (!existingMessage) {
+      return;
+    }
+
+    // When text arrives on a message that already has tool parts, the
+    // assistant is continuing after tool execution. Split into a new message
+    // so each step renders as a distinct chat bubble.
+    const hasToolParts = existingMessage.parts.some(
+      (part) => part.type === "tool_call" || part.type === "tool_result"
+    );
+
+    const targetMessage: MessageState = hasToolParts
+      ? {
+          id: `${rawItemId}-cont-${event.sequence}`,
+          role: "assistant",
+          parts: [],
+        }
+      : existingMessage;
+
+    if (hasToolParts) {
+      this.messages.push(targetMessage);
+      this.itemIdToMessageId.set(rawItemId, targetMessage.id);
+      this.currentAssistantId = targetMessage.id;
+    }
+
+    const lastPart = targetMessage.parts.at(-1);
+    if (lastPart?.type === "text") {
+      lastPart.text += deltaText;
+    } else {
+      targetMessage.parts.push({ type: "text", text: deltaText });
+    }
+  }
+
+  private handleItemCompleted(event: AcpEvent): void {
+    const item = extractEventItem(event.data);
+    const itemId = getString(item.item_id) || null;
+    if (!itemId) {
+      return;
+    }
+
+    const messageId = this.itemIdToMessageId.get(itemId) ?? itemId;
+    const message = this.messages.find(
+      (currentMessage) => currentMessage.id === messageId
+    );
+    if (!message) {
+      return;
+    }
+
+    // For the message's own item (not a merged tool_call/tool_result),
+    // set content if deltas never arrived.
+    if (messageId === itemId && message.parts.length === 0) {
+      const content = normalizeContentParts(extractContentParts(item));
+      if (content.length > 0) {
+        message.parts = content;
+      }
+    }
+  }
 }
 
-async function fetchSessionEvents(
-  labSessionId: string
-): Promise<SandboxAgentEvent[]> {
+async function createSandboxSession(
+  labSessionId: string,
+  modelId?: string
+): Promise<string> {
   const apiUrl = getAgentApiUrl();
-  const response = await fetch(`${apiUrl}/sandbox-agent/events?replay=true`, {
+  const body: Record<string, string> = {};
+  if (modelId) {
+    body.model = modelId;
+  }
+  const response = await fetch(`${apiUrl}/acp/sessions`, {
+    method: "POST",
     headers: {
-      Accept: "application/json",
+      "Content-Type": "application/json",
       "X-Lab-Session-Id": labSessionId,
     },
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
-    return [];
+    throw new Error("Failed to create sandbox agent session");
   }
 
-  return response.json();
-}
-
-function getPreferredModel(): string | null {
-  try {
-    const stored = localStorage.getItem("preferred-model");
-    return stored ? JSON.parse(stored) : null;
-  } catch {
-    return null;
-  }
+  const data = await response.json();
+  return data.id;
 }
 
 async function fetchSessionData(
   labSessionId: string
 ): Promise<SessionData | null> {
   const labSession = await api.sessions.get(labSessionId);
+  const sandboxSessionId = labSession.sandboxSessionId;
 
-  let sandboxSessionId = labSession.sandboxSessionId;
-
-  if (!sandboxSessionId) {
-    const apiUrl = getAgentApiUrl();
-    const preferredModel = getPreferredModel();
-    const body: Record<string, string> = {};
-    if (preferredModel) {
-      body.model = preferredModel;
-    }
-    const response = await fetch(`${apiUrl}/sandbox-agent/sessions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Lab-Session-Id": labSessionId,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to create sandbox agent session");
-    }
-
-    const data = await response.json();
-    sandboxSessionId = data.id;
-  }
-
-  if (!sandboxSessionId) {
-    return { sandboxSessionId: "", messages: [], lastSequence: 0 };
-  }
-
-  const events = await fetchSessionEvents(labSessionId);
-  const messages = reconstructMessagesFromEvents(events);
-  const lastSequence = events.reduce((max, e) => Math.max(max, e.sequence), 0);
-
-  return { sandboxSessionId, messages, lastSequence };
+  return {
+    sandboxSessionId: sandboxSessionId ?? "",
+    messages: [],
+  };
 }
 
 async function readSSEStream(
   response: Response,
-  onEvent: (event: SandboxAgentEvent) => void
+  onEvent: (event: AcpEvent) => void
 ): Promise<void> {
   const body = response.body;
   if (!body) {
@@ -401,28 +378,23 @@ async function readSSEStream(
 
   const reader = body.getReader();
   const decoder = new TextDecoder();
-  let buffer = "";
+  const parser = createAcpEventParser(onEvent);
 
   try {
-    while (true) {
+    const processReader = async (): Promise<void> => {
       const { done, value } = await reader.read();
       if (done) {
-        break;
+        return;
       }
 
-      buffer += decoder.decode(value, { stream: true });
-      const chunks = buffer.split("\n\n");
-      buffer = chunks.pop() ?? "";
+      parser.feed(decoder.decode(value, { stream: true }));
+      await processReader();
+    };
 
-      for (const chunk of chunks) {
-        if (!chunk.trim()) {
-          continue;
-        }
-        const event = parseSSEChunk(chunk);
-        if (event) {
-          onEvent(event);
-        }
-      }
+    await processReader();
+    const trailing = decoder.decode();
+    if (trailing) {
+      parser.feed(trailing);
     }
   } finally {
     reader.releaseLock();
@@ -434,7 +406,7 @@ function getAgentMessagesKey(labSessionId: string): string {
 }
 
 export function useAgent(labSessionId: string): UseAgentResult {
-  const { publish } = useSandboxAgentSession();
+  const { publish } = useAcpSession();
   const { mutate } = useSWRConfig();
   const [streamedMessages, setStreamedMessages] = useState<
     MessageState[] | null
@@ -448,10 +420,8 @@ export function useAgent(labSessionId: string): UseAgentResult {
     () => new Map()
   );
   const sendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const streamedMessagesRef = useRef<MessageState[] | null>(null);
   const sessionDataRef = useRef<SessionData | null>(null);
-  const itemToMessageRef = useRef<Map<string, string>>(new Map());
-  const currentAssistantIdRef = useRef<string | null>(null);
+  const accumulatorRef = useRef<MessageAccumulator | null>(null);
 
   const isOptimistic = labSessionId === "new";
 
@@ -466,19 +436,16 @@ export function useAgent(labSessionId: string): UseAgentResult {
 
   useEffect(() => {
     sessionDataRef.current = sessionData ?? null;
-    streamedMessagesRef.current = streamedMessages;
     if (swrError) {
       setError(
         swrError instanceof Error ? swrError : new Error("Failed to initialize")
       );
     }
-  }, [sessionData, streamedMessages, swrError]);
+  }, [sessionData, swrError]);
 
   const messages = streamedMessages ?? sessionData?.messages ?? [];
   const sandboxSessionId = sessionData?.sandboxSessionId ?? null;
-  const lastSequence = sessionData?.lastSequence ?? 0;
 
-  // SSE connection — connects once after replay data loads
   useEffect(() => {
     if (!sandboxSessionId) {
       return;
@@ -488,120 +455,9 @@ export function useAgent(labSessionId: string): UseAgentResult {
     const { signal } = abortController;
 
     const apiUrl = getAgentApiUrl();
-    const params = new URLSearchParams({ sessionId: labSessionId });
-    const offset = lastSequence;
-    if (offset > 0) {
-      params.set("offset", String(offset));
-    }
-
-    const eventsUrl = `${apiUrl}/sandbox-agent/events?${params}`;
-
-    const seenSequences = new Set<number>();
-
-    const handleItemStarted = (event: SandboxAgentEvent) => {
-      const item = extractEventItem(event.data);
-      const role =
-        item.role === "user" ? ("user" as const) : ("assistant" as const);
-      const itemId = extractItemId(item, `item-${event.sequence}`);
-
-      if (role === "user") {
-        itemToMessageRef.current.set(itemId, itemId);
-        setStreamedMessages((previous) => {
-          const base = previous ?? sessionDataRef.current?.messages ?? [];
-          return [...base, { id: itemId, role, parts: [] }];
-        });
-        return;
-      }
-
-      if (shouldMergeItem(item) && currentAssistantIdRef.current) {
-        itemToMessageRef.current.set(itemId, currentAssistantIdRef.current);
-        return;
-      }
-
-      currentAssistantIdRef.current = itemId;
-      itemToMessageRef.current.set(itemId, itemId);
-      setStreamedMessages((previous) => {
-        const base = previous ?? sessionDataRef.current?.messages ?? [];
-        const existing = base.find((message) => message.id === itemId);
-        if (existing) {
-          return base;
-        }
-        return [...base, { id: itemId, role, parts: [] }];
-      });
-    };
-
-    const handleItemDelta = (event: SandboxAgentEvent) => {
-      const rawItemId = getString(event.data.item_id) || null;
-      const deltaText = getString(event.data.delta) || null;
-
-      if (!(rawItemId && deltaText)) {
-        return;
-      }
-
-      const messageId = itemToMessageRef.current.get(rawItemId) ?? rawItemId;
-
-      setStreamedMessages((previous) => {
-        const base = previous ?? sessionDataRef.current?.messages ?? [];
-        return base.map((message) => {
-          if (message.id !== messageId) {
-            return message;
-          }
-
-          const updatedParts = [...message.parts];
-          const lastIndex = updatedParts.length - 1;
-          const lastPart = updatedParts.at(-1);
-
-          if (lastPart && lastPart.type === "text") {
-            updatedParts[lastIndex] = {
-              ...lastPart,
-              text: lastPart.text + deltaText,
-            };
-          } else {
-            updatedParts.push({ type: "text", text: deltaText });
-          }
-
-          return { ...message, parts: updatedParts };
-        });
-      });
-    };
-
-    const handleItemCompleted = (event: SandboxAgentEvent) => {
-      const item = extractEventItem(event.data);
-      const itemId = getString(item.item_id) || null;
-      const content = normalizeContentParts(extractContentParts(item));
-
-      if (!itemId || content.length === 0) {
-        return;
-      }
-
-      const messageId = itemToMessageRef.current.get(itemId) ?? itemId;
-
-      setStreamedMessages((previous) => {
-        const base = previous ?? sessionDataRef.current?.messages ?? [];
-        return base.map((message) => {
-          if (message.id !== messageId) {
-            return message;
-          }
-          if (messageId === itemId) {
-            if (message.parts.length > 0) {
-              return {
-                ...message,
-                parts: resolveToolCallStatuses(message.parts),
-              };
-            }
-            return {
-              ...message,
-              parts: resolveToolCallStatuses([...content]),
-            };
-          }
-          const newParts = [...message.parts, ...content];
-          return {
-            ...message,
-            parts: resolveToolCallStatuses(newParts),
-          };
-        });
-      });
-    };
+    resetTranslationState();
+    const messageAccumulator = new MessageAccumulator();
+    accumulatorRef.current = messageAccumulator;
 
     const clearSendingTimeout = () => {
       if (sendingTimeoutRef.current) {
@@ -615,28 +471,22 @@ export function useAgent(labSessionId: string): UseAgentResult {
       setIsSending(false);
       setSessionStatus({ type: "idle" });
 
-      if (streamedMessagesRef.current) {
-        mutate(
-          getAgentMessagesKey(labSessionId),
-          (current: SessionData | null | undefined) => {
-            if (!current) {
-              return current;
-            }
-            return {
-              ...current,
-              messages: streamedMessagesRef.current ?? [],
-            };
-          },
-          { revalidate: false }
-        );
-      }
+      mutate(
+        getAgentMessagesKey(labSessionId),
+        (current: SessionData | null | undefined) => {
+          if (!current) {
+            return current;
+          }
+          return {
+            ...current,
+            messages: messageAccumulator.getMessages(),
+          };
+        },
+        { revalidate: false }
+      );
     };
 
-    const handleTurnStarted = () => {
-      setSessionStatus({ type: "busy" });
-    };
-
-    const handleError = (event: SandboxAgentEvent) => {
+    const handleError = (event: AcpEvent) => {
       clearSendingTimeout();
       setIsSending(false);
       const message =
@@ -646,7 +496,7 @@ export function useAgent(labSessionId: string): UseAgentResult {
       setSessionStatus({ type: "error", message });
     };
 
-    const handleQuestionRequested = (event: SandboxAgentEvent) => {
+    const handleQuestionRequested = (event: AcpEvent) => {
       const questionId = getString(event.data.id) || null;
       const callId = getString(event.data.call_id) || null;
       if (questionId && callId) {
@@ -656,7 +506,7 @@ export function useAgent(labSessionId: string): UseAgentResult {
       }
     };
 
-    const handleQuestionResolved = (event: SandboxAgentEvent) => {
+    const handleQuestionResolved = (event: AcpEvent) => {
       const callId = getString(event.data.call_id) || null;
       if (callId) {
         setQuestionRequests((previous) => {
@@ -667,28 +517,16 @@ export function useAgent(labSessionId: string): UseAgentResult {
       }
     };
 
-    const processEvent = (event: SandboxAgentEvent) => {
-      if (seenSequences.has(event.sequence)) {
-        return;
-      }
-      seenSequences.add(event.sequence);
+    const processEvent = (event: AcpEvent) => {
       publish(event);
+      messageAccumulator.processEvent(event);
 
       switch (event.type) {
         case "turn.started":
-          handleTurnStarted();
+          setSessionStatus({ type: "busy" });
           break;
         case "turn.ended":
           handleTurnEnded();
-          break;
-        case "item.started":
-          handleItemStarted(event);
-          break;
-        case "item.delta":
-          handleItemDelta(event);
-          break;
-        case "item.completed":
-          handleItemCompleted(event);
           break;
         case "error":
           handleError(event);
@@ -702,9 +540,58 @@ export function useAgent(labSessionId: string): UseAgentResult {
         default:
           break;
       }
+
+      if (
+        event.type === "item.started" ||
+        event.type === "item.delta" ||
+        event.type === "item.completed"
+      ) {
+        setStreamedMessages(messageAccumulator.getMessages());
+      }
     };
 
-    const connect = async () => {
+    const replayHistory = async (): Promise<number> => {
+      const historyResponse = await fetch(`${apiUrl}/acp/history`, {
+        headers: { "X-Lab-Session-Id": labSessionId },
+        signal,
+      });
+
+      if (!historyResponse.ok) {
+        return 0;
+      }
+
+      const events: { sequence: number; eventData: unknown }[] =
+        await historyResponse.json();
+
+      for (const event of events) {
+        const eventData = getRecord(event.eventData);
+        if (!eventData) {
+          continue;
+        }
+
+        const translated = translateAcpEvent(eventData, event.sequence);
+        for (const translatedEvent of translated) {
+          messageAccumulator.processEvent(translatedEvent);
+        }
+      }
+
+      if (events.length > 0) {
+        setStreamedMessages(messageAccumulator.getMessages());
+      }
+
+      return events.reduce(
+        (highestSequence, event) => Math.max(highestSequence, event.sequence),
+        0
+      );
+    };
+
+    const streamLiveEvents = async (lastSequence: number) => {
+      const params = new URLSearchParams({ sessionId: labSessionId });
+      if (lastSequence > 0) {
+        params.set("offset", String(lastSequence));
+      }
+      const eventsUrl = `${apiUrl}/acp/events?${params}`;
+
       while (!signal.aborted) {
         try {
           const response = await fetch(eventsUrl, {
@@ -731,22 +618,25 @@ export function useAgent(labSessionId: string): UseAgentResult {
       }
     };
 
+    const resolveLastSequence = async (): Promise<number> =>
+      replayHistory().catch(() => 0);
+
+    const connect = async () => {
+      const lastSequence = await resolveLastSequence();
+      if (signal.aborted) {
+        return;
+      }
+      await streamLiveEvents(lastSequence);
+    };
+
     connect();
 
     return () => {
       abortController.abort();
     };
-  }, [sandboxSessionId, labSessionId, lastSequence, mutate, publish]);
+  }, [sandboxSessionId, labSessionId, mutate, publish]);
 
-  const sendMessage = async ({
-    content,
-    modelId,
-    attachments: _attachments,
-  }: SendMessageOptions) => {
-    if (!sandboxSessionId) {
-      throw new Error("Session not initialized");
-    }
-
+  const sendMessage = async ({ content, modelId }: SendMessageOptions) => {
     setError(null);
     setIsSending(true);
 
@@ -762,16 +652,36 @@ export function useAgent(labSessionId: string): UseAgentResult {
       5 * 60 * 1000
     );
 
+    const ensureActiveSandboxSessionId = async (): Promise<string> => {
+      if (sandboxSessionId) {
+        return sandboxSessionId;
+      }
+
+      const newSandboxSessionId = await createSandboxSession(
+        labSessionId,
+        modelId
+      );
+      mutate(
+        getAgentMessagesKey(labSessionId),
+        (current: SessionData | null | undefined): SessionData => ({
+          sandboxSessionId: newSandboxSessionId,
+          messages: current?.messages ?? [],
+        }),
+        { revalidate: false }
+      );
+      mutate(`session-${labSessionId}`);
+      return newSandboxSessionId;
+    };
+
     try {
+      const activeSandboxSessionId = await ensureActiveSandboxSessionId();
+
       const apiUrl = getAgentApiUrl();
       const body: Record<string, string> = {
-        sessionId: sandboxSessionId,
+        sessionId: activeSandboxSessionId,
         message: content,
       };
-      if (modelId) {
-        body.model = modelId;
-      }
-      const response = await fetch(`${apiUrl}/sandbox-agent/messages`, {
+      const response = await fetch(`${apiUrl}/acp/messages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -804,14 +714,15 @@ export function useAgent(labSessionId: string): UseAgentResult {
 
     try {
       const apiUrl = getAgentApiUrl();
-      await fetch(`${apiUrl}/sandbox-agent/sessions`, {
-        method: "DELETE",
+      await fetch(`${apiUrl}/acp/cancel`, {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Lab-Session-Id": labSessionId,
         },
-        body: JSON.stringify({ sessionId: sandboxSessionId }),
       });
+      setIsSending(false);
+      setSessionStatus({ type: "idle" });
     } catch (error) {
       console.warn("Failed to abort session:", error);
     }

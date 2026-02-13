@@ -256,7 +256,7 @@ const messageList = tv({
   base: "flex flex-col overflow-y-auto",
   variants: {
     compact: {
-      false: "flex-1 justify-between",
+      false: "flex-1",
     },
   },
   defaultVariants: {
@@ -292,7 +292,8 @@ function ChatMessageList({
       onScroll={handleScroll}
       ref={scrollRef}
     >
-      {children}
+      <div className="flex-1" />
+      <div className="contents">{children}</div>
     </div>
   );
 }

@@ -1,11 +1,14 @@
 "use client";
 
 import { File } from "@pierre/diffs/react";
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
+import { isValidElement } from "react";
 import { Streamdown } from "streamdown";
 import { cn } from "@/lib/cn";
 
 const pierreThemes = { light: "pierre-light", dark: "pierre-dark" } as const;
+type PierreFileStyle = CSSProperties & { "--diffs-font-size"?: string };
+const pierreFileStyle: PierreFileStyle = { "--diffs-font-size": "12px" };
 
 function CodeBlock({
   content,
@@ -27,7 +30,7 @@ function CodeBlock({
           overflow: "scroll",
           disableFileHeader: true,
         }}
-        style={{ "--diffs-font-size": "12px" } as React.CSSProperties}
+        style={pierreFileStyle}
       />
     </div>
   );
@@ -143,14 +146,30 @@ function Code({
 
 const languageRegex = /language-(\w+)/;
 
-function Pre({ children }: ComponentPropsWithoutRef<"pre">) {
-  const codeChild = children as ReactNode & {
-    props?: { className?: string; children?: string };
-  };
-  const codeClassName = codeChild?.props?.className ?? "";
-  const codeContent = codeChild?.props?.children ?? "";
+function getCodeProps(children: ReactNode): {
+  className: string;
+  content: string | null;
+} {
+  if (!isValidElement(children)) {
+    return { className: "", content: null };
+  }
+  const childProps = children.props;
+  if (typeof childProps !== "object" || childProps === null) {
+    return { className: "", content: null };
+  }
+  const propsRecord = Object.fromEntries(Object.entries(childProps));
+  const className =
+    typeof propsRecord.className === "string" ? propsRecord.className : "";
+  const content =
+    typeof propsRecord.children === "string" ? propsRecord.children : null;
+  return { className, content };
+}
 
-  if (typeof codeContent !== "string") {
+function Pre({ children }: ComponentPropsWithoutRef<"pre">) {
+  const { className: codeClassName, content: codeContent } =
+    getCodeProps(children);
+
+  if (codeContent === null) {
     return (
       <pre className="overflow-x-auto rounded bg-bg-muted p-3 font-mono text-xs">
         {children}

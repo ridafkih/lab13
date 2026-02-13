@@ -49,6 +49,7 @@ const state: {
 } = { browser: null, streamServer: null, socketServer: null };
 
 type BrowserPage = ReturnType<BrowserManager["getPage"]>;
+type BrowserCommand = Parameters<typeof executeCommand>[0];
 
 const setupPageEvents = (sessionId: string, page: BrowserPage) => {
   page.on("console", (msg) => {
@@ -387,7 +388,7 @@ const startWorker = async (config: DaemonWorkerConfig) => {
 
   const handleExecuteCommand = async (data: {
     requestId: string;
-    command: { id: string };
+    command: BrowserCommand;
   }) => {
     const { requestId, command } = data;
     if (!state.browser) {

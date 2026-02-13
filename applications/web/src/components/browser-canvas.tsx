@@ -73,8 +73,12 @@ function BrowserCanvasRoot({ sessionId, children }: RootProps) {
     try {
       const binaryString = atob(base64);
       const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+      for (
+        let characterIndex = 0;
+        characterIndex < binaryString.length;
+        characterIndex++
+      ) {
+        bytes[characterIndex] = binaryString.charCodeAt(characterIndex);
       }
       const blob = new Blob([bytes], { type: "image/jpeg" });
       const newBitmap = await createImageBitmap(blob);

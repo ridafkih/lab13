@@ -32,19 +32,35 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  sandbox-agent-image:
+  acp-proxy:
     build:
       context: .
-      dockerfile: services/sandbox-agent/Dockerfile
-    image: lab-sandbox-agent:latest
-    platform: linux/amd64
-    profiles: ["build"]
+      dockerfile: services/acp-proxy/Dockerfile
+    container_name: lab-acp-proxy
+    platform: linux/arm64
+    init: true
+    volumes:
+      - session_workspaces:/workspaces
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_CODE_OAUTH_CREDENTIALS: ${CLAUDE_CODE_OAUTH_CREDENTIALS:-}
+    ports:
+      - "3001:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   mcp:
     build:
       context: .
       dockerfile: services/mcp/Dockerfile
     container_name: lab-mcp
+    command: ["bun", "--watch", "run", "--cwd", "services/mcp", "start"]
+    ports:
+      - "3100:${MCP_PORT}"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
       interval: 30s
@@ -53,6 +69,12 @@ services:
       start_period: 15s
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./services/mcp/src:/app/services/mcp/src
+      - ./packages/browser-protocol/src:/app/packages/browser-protocol/src
+      - ./packages/entry-point/src:/app/packages/entry-point/src
+      - ./packages/sandbox-docker/src:/app/packages/sandbox-docker/src
+      - ./packages/sandbox-sdk/src:/app/packages/sandbox-sdk/src
+      - ./packages/widelogger/src:/app/packages/widelogger/src
     environment:
       MCP_PORT: $MCP_PORT
       API_BASE_URL: $MCP_API_BASE_URL
@@ -73,13 +95,17 @@ services:
     develop:
       watch:
         - action: rebuild
-          path: ./services/mcp
+          path: ./services/mcp/package.json
         - action: rebuild
-          path: ./packages/sandbox-sdk
+          path: ./packages/sandbox-sdk/package.json
         - action: rebuild
-          path: ./packages/sandbox-docker
+          path: ./packages/sandbox-docker/package.json
         - action: rebuild
-          path: ./packages/browser-protocol
+          path: ./packages/browser-protocol/package.json
+        - action: rebuild
+          path: ./packages/entry-point/package.json
+        - action: rebuild
+          path: ./packages/widelogger/package.json
         - action: rebuild
           path: ./package.json
         - action: rebuild
@@ -90,6 +116,7 @@ services:
       context: .
       dockerfile: services/api/Dockerfile
     container_name: lab-api
+    command: ["bun", "--watch", "run", "--cwd", "services/api", "start"]
     ports:
       - "4000:4000"
     healthcheck:
@@ -100,10 +127,26 @@ services:
       start_period: 15s
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./services/api/src:/app/services/api/src
+      - ./packages/browser-protocol/src:/app/packages/browser-protocol/src
+      - ./packages/context/src:/app/packages/context/src
+      - ./packages/database/src:/app/packages/database/src
+      - ./packages/entry-point/src:/app/packages/entry-point/src
+      - ./packages/ffmpeg/src:/app/packages/ffmpeg/src
+      - ./packages/http-utilities/src:/app/packages/http-utilities/src
+      - ./packages/multiplayer-sdk/src:/app/packages/multiplayer-sdk/src
+      - ./packages/multiplayer-server/src:/app/packages/multiplayer-server/src
+      - ./packages/prompts-sdk/src:/app/packages/prompts-sdk/src
+      - ./packages/router/src:/app/packages/router/src
+      - ./packages/sandbox-docker/src:/app/packages/sandbox-docker/src
+      - ./packages/sandbox-sdk/src:/app/packages/sandbox-sdk/src
+      - ./packages/subagents/src:/app/packages/subagents/src
+      - ./packages/widelogger/src:/app/packages/widelogger/src
     environment:
       API_PORT: $API_PORT
       DATABASE_URL: $DATABASE_URL
-      ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_CODE_OAUTH_CREDENTIALS: ${CLAUDE_CODE_OAUTH_CREDENTIALS:-}
       PROXY_BASE_URL: $PROXY_BASE_URL
       PROXY_INTERNAL_URL: $PROXY_INTERNAL_URL
       CONTAINER_SCHEME: $CONTAINER_SCHEME
@@ -138,6 +181,8 @@ services:
       IMAGE_ANALYZER_MODEL: $IMAGE_ANALYZER_MODEL
       IMAGE_ANALYZER_API_KEY: $IMAGE_ANALYZER_API_KEY
       REDIS_URL: $REDIS_URL
+      SANDBOX_AGENT_URL: http://lab-acp-proxy:3000
+      SANDBOX_AGENT_MCP_URL: ${SANDBOX_AGENT_MCP_URL:-}
     depends_on:
       postgres:
         condition: service_started
@@ -147,38 +192,40 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
+      acp-proxy:
+        condition: service_healthy
     develop:
       watch:
         - action: rebuild
-          path: ./services/api
+          path: ./services/api/package.json
         - action: rebuild
-          path: ./packages/browser-protocol
+          path: ./packages/browser-protocol/package.json
         - action: rebuild
-          path: ./packages/context
+          path: ./packages/context/package.json
         - action: rebuild
-          path: ./packages/database
+          path: ./packages/database/package.json
         - action: rebuild
-          path: ./packages/entry-point
+          path: ./packages/entry-point/package.json
         - action: rebuild
-          path: ./packages/ffmpeg
+          path: ./packages/ffmpeg/package.json
         - action: rebuild
-          path: ./packages/http-utilities
+          path: ./packages/http-utilities/package.json
         - action: rebuild
-          path: ./packages/multiplayer-sdk
+          path: ./packages/multiplayer-sdk/package.json
         - action: rebuild
-          path: ./packages/multiplayer-server
+          path: ./packages/multiplayer-server/package.json
         - action: rebuild
-          path: ./packages/prompts-sdk
+          path: ./packages/prompts-sdk/package.json
         - action: rebuild
-          path: ./packages/router
+          path: ./packages/router/package.json
         - action: rebuild
-          path: ./packages/sandbox-docker
+          path: ./packages/sandbox-docker/package.json
         - action: rebuild
-          path: ./packages/sandbox-sdk
+          path: ./packages/sandbox-sdk/package.json
         - action: rebuild
-          path: ./packages/subagents
+          path: ./packages/subagents/package.json
         - action: rebuild
-          path: ./packages/widelogger
+          path: ./packages/widelogger/package.json
         - action: rebuild
           path: ./package.json
         - action: rebuild
@@ -190,6 +237,7 @@ services:
       dockerfile: services/browser-daemon/Dockerfile
     image: lab-browser:latest
     container_name: lab-browser
+    command: ["bun", "--watch", "run", "start"]
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/health"]
       interval: 5s
@@ -200,6 +248,12 @@ services:
     volumes:
       - browser_sockets:/tmp/agent-browser-socket
       - browser_profiles:/data/browser-profiles
+      - ./services/browser-daemon/src:/app/services/browser-daemon/src
+      - ./packages/browser-protocol/src:/app/packages/browser-protocol/src
+      - ./packages/entry-point/src:/app/packages/entry-point/src
+      - ./packages/http-utilities/src:/app/packages/http-utilities/src
+      - ./packages/router/src:/app/packages/router/src
+      - ./packages/widelogger/src:/app/packages/widelogger/src
     environment:
       AGENT_BROWSER_SOCKET_DIR: /tmp/agent-browser-socket
       AGENT_BROWSER_PROFILE_DIR: /data/browser-profiles
@@ -212,13 +266,17 @@ services:
     develop:
       watch:
         - action: rebuild
-          path: ./services/browser-daemon
+          path: ./services/browser-daemon/package.json
         - action: rebuild
-          path: ./packages/browser-protocol
+          path: ./packages/browser-protocol/package.json
         - action: rebuild
-          path: ./packages/http-utilities
+          path: ./packages/http-utilities/package.json
         - action: rebuild
-          path: ./packages/router
+          path: ./packages/router/package.json
+        - action: rebuild
+          path: ./packages/entry-point/package.json
+        - action: rebuild
+          path: ./packages/widelogger/package.json
         - action: rebuild
           path: ./package.json
         - action: rebuild
@@ -251,6 +309,7 @@ services:
       context: .
       dockerfile: services/proxy/Dockerfile
     container_name: $PROXY_CONTAINER_NAME
+    command: ["bun", "--watch", "run", "--cwd", "services/proxy", "start"]
     ports:
       - "$PROXY_PORT:$PROXY_PORT"
     healthcheck:
@@ -261,6 +320,10 @@ services:
       start_period: 5s
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./services/proxy/src:/app/services/proxy/src
+      - ./packages/database/src:/app/packages/database/src
+      - ./packages/entry-point/src:/app/packages/entry-point/src
+      - ./packages/widelogger/src:/app/packages/widelogger/src
     environment:
       DATABASE_URL: $DATABASE_URL
       PROXY_PORT: $PROXY_PORT
@@ -270,9 +333,13 @@ services:
     develop:
       watch:
         - action: rebuild
-          path: ./services/proxy
+          path: ./services/proxy/package.json
         - action: rebuild
-          path: ./packages/database
+          path: ./packages/database/package.json
+        - action: rebuild
+          path: ./packages/entry-point/package.json
+        - action: rebuild
+          path: ./packages/widelogger/package.json
         - action: rebuild
           path: ./package.json
         - action: rebuild

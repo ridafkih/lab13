@@ -1,10 +1,10 @@
 import type { ImageStore } from "@lab/context";
 import type { ImageAnalyzerContext } from "@lab/subagents/vision/types";
 import type { LanguageModel } from "ai";
+import type { AcpClient } from "../../acp/client";
 import type { BrowserServiceManager } from "../../managers/browser-service.manager";
 import type { PoolManager } from "../../managers/pool.manager";
 import type { SessionLifecycleManager } from "../../managers/session-lifecycle.manager";
-import type { SandboxAgentClientResolver } from "../../sandbox-agent/client-resolver";
 import type { SessionStateStore } from "../../state/session-state-store";
 import type { Publisher } from "../../types/dependencies";
 import { createCreateSessionTool } from "../tools/create-session";
@@ -26,7 +26,7 @@ interface BuildOrchestratorToolsConfig {
   createModel: () => LanguageModel;
   imageStore?: ImageStore;
   visionContext?: ImageAnalyzerContext;
-  sandboxAgentResolver: SandboxAgentClientResolver;
+  acp: AcpClient;
   publisher: Publisher;
   sessionStateStore: SessionStateStore;
 }
@@ -39,14 +39,14 @@ export async function buildOrchestratorTools(
     sessionLifecycle: toolsConfig.sessionLifecycle,
     poolManager: toolsConfig.poolManager,
     modelId: toolsConfig.modelId,
-    sandboxAgentResolver: toolsConfig.sandboxAgentResolver,
+    acp: toolsConfig.acp,
     publisher: toolsConfig.publisher,
     sessionStateStore: toolsConfig.sessionStateStore,
   });
 
   const sendMessageToSessionTool = createSendMessageToSessionTool({
     modelId: toolsConfig.modelId,
-    sandboxAgentResolver: toolsConfig.sandboxAgentResolver,
+    acp: toolsConfig.acp,
     publisher: toolsConfig.publisher,
     sessionStateStore: toolsConfig.sessionStateStore,
   });
@@ -66,12 +66,8 @@ export async function buildOrchestratorTools(
     imageStore: toolsConfig.imageStore,
   });
 
-  const getSessionMessagesTool = createGetSessionMessagesTool(
-    toolsConfig.sandboxAgentResolver
-  );
-  const searchSessionsTool = createSearchSessionsTool(
-    toolsConfig.sandboxAgentResolver
-  );
+  const getSessionMessagesTool = createGetSessionMessagesTool();
+  const searchSessionsTool = createSearchSessionsTool();
 
   const baseTools = {
     listProjects: listProjectsTool,

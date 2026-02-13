@@ -19,7 +19,7 @@ export const main = (async ({ env, extras }) => {
     poolManager,
     logMonitor,
     containerMonitor,
-    sandboxAgentMonitor,
+    acpMonitor,
     networkReconcileMonitor,
   } = extras;
 
@@ -36,11 +36,11 @@ export const main = (async ({ env, extras }) => {
   poolManager.initialize();
   logMonitor.start();
   containerMonitor.start(logMonitor);
-  sandboxAgentMonitor.start();
+  acpMonitor.start();
 
   return () => {
     containerMonitor.stop();
-    sandboxAgentMonitor.stop();
+    acpMonitor.stop();
     logMonitor.stop();
     networkReconcileMonitor.stop();
     server.shutdown();

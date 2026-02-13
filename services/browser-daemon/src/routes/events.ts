@@ -3,9 +3,12 @@ import { TIMING } from "../config/constants";
 import type { RouteHandler } from "../types/route";
 
 export const GET: RouteHandler = ({ context: { daemonManager } }) => {
-  const state = {
-    unsubscribe: null as (() => void) | null,
-    pingInterval: null as Timer | null,
+  const state: {
+    unsubscribe: (() => void) | null;
+    pingInterval: Timer | null;
+  } = {
+    unsubscribe: null,
+    pingInterval: null,
   };
 
   const stream = new ReadableStream({

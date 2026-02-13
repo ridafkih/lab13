@@ -24,6 +24,7 @@
         "@pierre/diffs": "^1.0.10",
         "better-auth": "^1.4.18",
         "clsx": "^2.1.1",
+        "eventsource-parser": "^3.0.6",
         "jotai": "^2.17.1",
         "lucide-react": "^0.563.0",
         "next": "16.1.6",
@@ -264,6 +265,10 @@
         "typescript": "^5",
       },
     },
+    "services/acp-proxy": {
+      "name": "@lab/acp-proxy",
+      "version": "0.0.1",
+    },
     "services/api": {
       "name": "@lab/api",
       "version": "0.1.0",
@@ -284,6 +289,7 @@
         "@lab/sandbox-sdk": "workspace:*",
         "@lab/subagents": "workspace:*",
         "@lab/widelogger": "workspace:*",
+        "acp-http-client": "^0.2.0",
         "ai": "^6.0.77",
         "arktype": "^2.1.29",
         "better-auth": "^1.4.18",
@@ -375,6 +381,8 @@
     "sharp",
   ],
   "packages": {
+    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@0.14.1", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-b6r3PS3Nly+Wyw9U+0nOr47bV8tfS476EgyEMhoKvJCZLbgqoDFN7DJwkxL88RR0aiOqOYV1ZnESHqb+RmdH8w=="],
+
     "@ai-sdk/anthropic": ["@ai-sdk/anthropic@3.0.39", "", { "dependencies": { "@ai-sdk/provider": "3.0.8", "@ai-sdk/provider-utils": "4.0.14" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-OZXS78H3hgJ31YVlNCLQcM67D7hP5vQyDBGVwBuE20FopQqTRSAQY1nMBPe6aUzuoNthTfROIXtIqqX9Fv65Ww=="],
 
     "@ai-sdk/gateway": ["@ai-sdk/gateway@3.0.39", "", { "dependencies": { "@ai-sdk/provider": "3.0.8", "@ai-sdk/provider-utils": "4.0.14", "@vercel/oidc": "3.1.0" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-SeCZBAdDNbWpVUXiYgOAqis22p5MEYfrjRw0hiBa5hM+7sDGYQpMinUjkM8kbPXMkY+AhKLrHleBl+SuqpzlgA=="],
@@ -648,6 +656,8 @@
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
     "@js-sdsl/ordered-map": ["@js-sdsl/ordered-map@4.4.2", "", {}, "sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw=="],
+
+    "@lab/acp-proxy": ["@lab/acp-proxy@workspace:services/acp-proxy"],
 
     "@lab/api": ["@lab/api@workspace:services/api"],
 
@@ -1032,6 +1042,8 @@
     "abort-controller": ["abort-controller@3.0.0", "", { "dependencies": { "event-target-shim": "^5.0.0" } }, "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg=="],
 
     "accepts": ["accepts@2.0.0", "", { "dependencies": { "mime-types": "^3.0.0", "negotiator": "^1.0.0" } }, "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng=="],
+
+    "acp-http-client": ["acp-http-client@0.2.0", "", { "dependencies": { "@agentclientprotocol/sdk": "^0.14.1" } }, "sha512-ymKfPcslLP1eEwyUsAGqeTwQWAYSQu7JBuSKB/KCMCFPLSEliLGPPjEBg7cUxvNVY6f6BP5rrDezKfdGtxVRHw=="],
 
     "agent-base": ["agent-base@7.1.4", "", {}, "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ=="],
 

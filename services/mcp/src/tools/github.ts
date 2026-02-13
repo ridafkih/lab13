@@ -113,9 +113,9 @@ function formatCommitStatuses(
   }
 
   const lines = ["### Commit Statuses"];
-  for (const s of statuses) {
+  for (const status of statuses) {
     lines.push(
-      `[${statusIcon(s.state)}] ${s.context}: ${s.description || s.state}`
+      `[${statusIcon(status.state)}] ${status.context}: ${status.description || status.state}`
     );
   }
   lines.push("");
@@ -400,7 +400,10 @@ export function github(server: McpServer, { config }: ToolContext) {
           return notConfiguredError();
         }
 
-        let ref = args.ref as string;
+        let ref = typeof args.ref === "string" ? args.ref : "";
+        if (!ref) {
+          return errorResult("Missing or invalid ref");
+        }
 
         if (ref.startsWith("pr:")) {
           const prNumber = ref.slice(3);

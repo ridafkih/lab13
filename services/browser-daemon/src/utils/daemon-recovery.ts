@@ -20,7 +20,7 @@ export function recoverSession(
   sessionId: string,
   callbacks: RecoveryCallbacks
 ): DaemonSession | null {
-  return widelog.context(() => {
+  return widelog.context<DaemonSession | null>(() => {
     widelog.set("event_name", "daemon.session_recovery");
     widelog.set("session_id", sessionId);
 
@@ -78,7 +78,7 @@ export function recoverSession(
     } finally {
       widelog.flush();
     }
-  }) as DaemonSession | null;
+  });
 }
 
 export function discoverExistingSessions(callbacks: RecoveryCallbacks): void {

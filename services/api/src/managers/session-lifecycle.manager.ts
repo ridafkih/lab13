@@ -1,3 +1,7 @@
+import type { NewSessionRequest } from "acp-http-client";
+import type { AcpClient } from "../acp/client";
+import { initiateAgentSession } from "../orchestration/conversation-initiator";
+import { getProjectSystemPrompt } from "../repositories/project.repository";
 import { initializeSessionContainers } from "../runtime/containers";
 import {
   cleanupOrphanedNetworks,
@@ -8,8 +12,19 @@ import { SessionCleanupService } from "../services/session-cleanup.service";
 import type { DeferredPublisher } from "../shared/deferred-publisher";
 import type { SessionStateStore } from "../state/session-state-store";
 import type { Sandbox } from "../types/dependencies";
-import type { SidecarProvider } from "../types/sidecar";
+import type { PromptService } from "../types/prompt";
 import type { BrowserServiceManager } from "./browser-service.manager";
+
+interface SessionLifecycleManagerOptions {
+  sandbox: Sandbox;
+  proxyManager: ProxyManager;
+  browserServiceManager: BrowserServiceManager;
+  deferredPublisher: DeferredPublisher;
+  sessionStateStore: SessionStateStore;
+  acp: AcpClient;
+  promptService: PromptService;
+  mcpUrl?: string;
+}
 
 export class SessionLifecycleManager {
   private readonly initializationTasks = new Map<string, Promise<void>>();
@@ -19,22 +34,19 @@ export class SessionLifecycleManager {
   private readonly browserServiceManager: BrowserServiceManager;
   private readonly deferredPublisher: DeferredPublisher;
   private readonly sessionStateStore: SessionStateStore;
-  private readonly sidecarProviders: SidecarProvider[];
+  private readonly acp: AcpClient;
+  private readonly promptService: PromptService;
+  private readonly mcpUrl?: string;
 
-  constructor(
-    sandbox: Sandbox,
-    proxyManager: ProxyManager,
-    browserServiceManager: BrowserServiceManager,
-    deferredPublisher: DeferredPublisher,
-    sessionStateStore: SessionStateStore,
-    sidecarProviders: SidecarProvider[] = []
-  ) {
-    this.sandbox = sandbox;
-    this.proxyManager = proxyManager;
-    this.browserServiceManager = browserServiceManager;
-    this.deferredPublisher = deferredPublisher;
-    this.sessionStateStore = sessionStateStore;
-    this.sidecarProviders = sidecarProviders;
+  constructor(options: SessionLifecycleManagerOptions) {
+    this.sandbox = options.sandbox;
+    this.proxyManager = options.proxyManager;
+    this.browserServiceManager = options.browserServiceManager;
+    this.deferredPublisher = options.deferredPublisher;
+    this.sessionStateStore = options.sessionStateStore;
+    this.acp = options.acp;
+    this.promptService = options.promptService;
+    this.mcpUrl = options.mcpUrl;
   }
 
   private getDeps() {
@@ -43,7 +55,7 @@ export class SessionLifecycleManager {
       publisher: this.deferredPublisher.get(),
       proxyManager: this.proxyManager,
       sessionStateStore: this.sessionStateStore,
-      sidecarProviders: this.sidecarProviders,
+      sidecarProviders: [],
       cleanupSessionNetwork: (sessionId: string) =>
         cleanupSessionNetwork(sessionId, this.sandbox),
     });
@@ -68,24 +80,15 @@ export class SessionLifecycleManager {
       this.getDeps()
     );
 
-    const sidecarResults = await Promise.allSettled(
-      this.sidecarProviders.map((provider) =>
-        provider.spawnForSession(sessionId)
-      )
-    );
+    const systemPrompt = await this.buildSystemPrompt(sessionId, projectId);
+    const mcpServers = this.buildMcpServers(sessionId);
 
-    for (const result of sidecarResults) {
-      if (result.status === "rejected") {
-        const error = result.reason;
-        const message = error instanceof Error ? error.message : String(error);
-        const stack = error instanceof Error ? error.stack : undefined;
-        console.error(
-          `[SessionLifecycle] Sidecar spawn failed for session ${sessionId}:`,
-          message,
-          stack
-        );
-      }
-    }
+    await initiateAgentSession({
+      sessionId,
+      acp: this.acp,
+      systemPrompt: systemPrompt ?? undefined,
+      mcpServers,
+    });
   }
 
   scheduleInitializeSession(
@@ -115,5 +118,37 @@ export class SessionLifecycleManager {
       sessionId,
       this.browserServiceManager.service
     );
+  }
+
+  private async buildSystemPrompt(
+    sessionId: string,
+    projectId: string
+  ): Promise<string | null> {
+    const projectPrompt = await getProjectSystemPrompt(projectId).catch(
+      () => null
+    );
+    if (projectPrompt === null) {
+      return null;
+    }
+    const { text } = this.promptService.compose({
+      sessionId,
+      projectId,
+      projectSystemPrompt: projectPrompt,
+    });
+    return text || null;
+  }
+
+  private buildMcpServers(sessionId: string): NewSessionRequest["mcpServers"] {
+    if (!this.mcpUrl) {
+      return [];
+    }
+    return [
+      {
+        name: "lab",
+        type: "http",
+        url: this.mcpUrl,
+        headers: [{ name: "x-lab-session-id", value: sessionId }],
+      },
+    ];
   }
 }

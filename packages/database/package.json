@@ -78,6 +78,14 @@
     "./schema/api-keys": {
       "types": "./src/schema/api-keys.ts",
       "default": "./src/schema/api-keys.ts"
+    },
+    "./schema/agent-events": {
+      "types": "./src/schema/agent-events.ts",
+      "default": "./src/schema/agent-events.ts"
+    },
+    "./schema/session-tasks": {
+      "types": "./src/schema/session-tasks.ts",
+      "default": "./src/schema/session-tasks.ts"
     }
   },
   "scripts": {

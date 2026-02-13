@@ -55,7 +55,7 @@ Decide whether to include a screenshot based on context:
     browserService: context.browserService,
     sessionLifecycle: context.sessionLifecycle,
     poolManager: context.poolManager,
-    sandboxAgentResolver: context.sandboxAgentResolver,
+    acp: context.acp,
     publisher: context.publisher,
     imageStore: context.imageStore,
     sessionStateStore: context.sessionStateStore,

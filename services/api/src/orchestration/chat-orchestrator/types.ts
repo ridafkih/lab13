@@ -1,8 +1,8 @@
 import type { ImageStore } from "@lab/context";
+import type { AcpClient } from "../../acp/client";
 import type { BrowserServiceManager } from "../../managers/browser-service.manager";
 import type { PoolManager } from "../../managers/pool.manager";
 import type { SessionLifecycleManager } from "../../managers/session-lifecycle.manager";
-import type { SandboxAgentClientResolver } from "../../sandbox-agent/client-resolver";
 import type { SessionStateStore } from "../../state/session-state-store";
 import type { Publisher } from "../../types/dependencies";
 
@@ -16,7 +16,7 @@ export interface ChatOrchestratorInput {
   poolManager: PoolManager;
   modelId?: string;
   timestamp?: string;
-  sandboxAgentResolver: SandboxAgentClientResolver;
+  acp: AcpClient;
   publisher: Publisher;
   imageStore?: ImageStore;
   sessionStateStore: SessionStateStore;

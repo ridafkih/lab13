@@ -48,8 +48,8 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
   }
-  for (const key in value) {
-    if (typeof (value as Record<string, unknown>)[key] !== "string") {
+  for (const [, recordValue] of Object.entries(value)) {
+    if (typeof recordValue !== "string") {
       return false;
     }
   }

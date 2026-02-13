@@ -1,10 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
+import type { AcpClient } from "../../acp/client";
+import { widelog } from "../../logging";
 import type { BrowserServiceManager } from "../../managers/browser-service.manager";
 import type { PoolManager } from "../../managers/pool.manager";
 import type { SessionLifecycleManager } from "../../managers/session-lifecycle.manager";
 import { findProjectById } from "../../repositories/project.repository";
-import type { SandboxAgentClientResolver } from "../../sandbox-agent/client-resolver";
 import type { SessionStateStore } from "../../state/session-state-store";
 import type { Publisher } from "../../types/dependencies";
 import { initiateConversation } from "../conversation-initiator";
@@ -15,7 +16,7 @@ interface CreateSessionToolContext {
   sessionLifecycle: SessionLifecycleManager;
   poolManager: PoolManager;
   modelId?: string;
-  sandboxAgentResolver: SandboxAgentClientResolver;
+  acp: AcpClient;
   publisher: Publisher;
   sessionStateStore: SessionStateStore;
 }
@@ -51,13 +52,26 @@ export function createCreateSessionTool(context: CreateSessionToolContext) {
           publisher: context.publisher,
         });
 
-        await initiateConversation({
+        // Fire agent session creation without awaiting — container init
+        // is already running in background, so the agent can start in parallel.
+        initiateConversation({
           sessionId: session.id,
           task: taskSummary,
           modelId: context.modelId,
-          sandboxAgentResolver: context.sandboxAgentResolver,
+          acp: context.acp,
           publisher: context.publisher,
           sessionStateStore: context.sessionStateStore,
+        }).catch((error) => {
+          widelog.context(() => {
+            widelog.set(
+              "event_name",
+              "create_session.initiate_conversation_failed"
+            );
+            widelog.set("session_id", session.id);
+            widelog.set("outcome", "error");
+            widelog.errorFields(error);
+            widelog.flush();
+          });
         });
 
         return {

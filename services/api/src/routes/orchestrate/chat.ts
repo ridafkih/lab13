@@ -64,7 +64,7 @@ const POST: Handler<OrchestrationContext> = async ({ request, context }) => {
         poolManager: context.poolManager,
         modelId: body.modelId,
         timestamp: body.timestamp,
-        sandboxAgentResolver: context.sandboxAgentResolver,
+        acp: context.acp,
         publisher: context.publisher,
         imageStore: context.imageStore,
         sessionStateStore: context.sessionStateStore,
@@ -94,7 +94,7 @@ const POST: Handler<OrchestrationContext> = async ({ request, context }) => {
     poolManager: context.poolManager,
     modelId: body.modelId,
     timestamp: body.timestamp,
-    sandboxAgentResolver: context.sandboxAgentResolver,
+    acp: context.acp,
     publisher: context.publisher,
     imageStore: context.imageStore,
     sessionStateStore: context.sessionStateStore,
@@ -123,18 +123,20 @@ function createSseStream(
 
   return new ReadableStream({
     async start(controller) {
-      try {
-        let result = await generator.next();
-
-        while (!result.done) {
-          const chunk = result.value;
+      const streamChunks = async (): Promise<ChatOrchestratorResult> => {
+        while (true) {
+          const iteration = await generator.next();
+          if (iteration.done) {
+            return iteration.value;
+          }
+          const chunk = iteration.value;
           const event = `event: chunk\ndata: ${JSON.stringify({ text: chunk.text })}\n\n`;
           controller.enqueue(encoder.encode(event));
-          result = await generator.next();
         }
+      };
 
-        // result.value contains the final ChatOrchestratorResult
-        const finalResult = result.value;
+      try {
+        const finalResult = await streamChunks();
 
         // Save the message
         await onComplete(finalResult);

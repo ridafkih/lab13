@@ -18,7 +18,7 @@ export class PortAllocator implements IPortAllocator {
   async allocate(count = 1): Promise<number[]> {
     const ports: number[] = [];
 
-    for (let i = 0; i < count; i++) {
+    for (let allocationIndex = 0; allocationIndex < count; allocationIndex++) {
       const port = await this.findAvailablePort();
       this.allocated.add(port);
       ports.push(port);

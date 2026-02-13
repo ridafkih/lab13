@@ -16,7 +16,7 @@ const summaryRequestSchema = z.object({
 
 const POST = withParams<{ sessionId: string }, InfraContext>(
   ["sessionId"],
-  async ({ params: { sessionId }, request, context: ctx }) => {
+  async ({ params: { sessionId }, request }) => {
     widelog.set("session.id", sessionId);
     const { originalTask } = await parseRequestBody(
       request,
@@ -54,7 +54,6 @@ const POST = withParams<{ sessionId: string }, InfraContext>(
         sessionId,
         originalTask: originalTask || orchestration.content,
         platformOrigin: orchestration.platformOrigin ?? undefined,
-        sandboxAgentResolver: ctx.sandboxAgentResolver,
       });
 
       await updateOrchestrationSummaryStatus(

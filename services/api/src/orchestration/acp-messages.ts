@@ -1,10 +1,5 @@
-/**
- * Type guards and utilities for Sandbox Agent message parsing.
- * Used by orchestration tools that interact with Sandbox Agent sessions.
- */
-
-import type { SandboxAgentClientResolver } from "../sandbox-agent/client-resolver";
-import type { SandboxAgentEvent } from "../types/dependencies";
+import { getAgentEvents } from "../repositories/agent-event.repository";
+import type { AcpEvent } from "../types/dependencies";
 import { MESSAGE_ROLE, type MessageRole } from "../types/message";
 
 export interface ReconstructedMessage {
@@ -12,13 +7,16 @@ export interface ReconstructedMessage {
   content: string;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function isTextPart(value: unknown): value is { type: "text"; text: string } {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as Record<string, unknown>).type === "text" &&
-    typeof (value as Record<string, unknown>).text === "string"
-  );
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return value.type === "text" && typeof value.text === "string";
 }
 
 function collectText(parts: unknown[]): string {
@@ -47,10 +45,7 @@ function flushCurrentItem(state: ExtractionState): void {
   }
 }
 
-function processExtractionEvent(
-  event: SandboxAgentEvent,
-  state: ExtractionState
-): void {
+function processExtractionEvent(event: AcpEvent, state: ExtractionState): void {
   if (event.type === "item.started") {
     flushCurrentItem(state);
     state.currentText = "";
@@ -75,7 +70,7 @@ function processExtractionEvent(
 }
 
 export function extractTextFromEvents(
-  events: SandboxAgentEvent[]
+  events: AcpEvent[]
 ): ReconstructedMessage[] {
   const state: ExtractionState = {
     messages: [],
@@ -92,12 +87,40 @@ export function extractTextFromEvents(
   return state.messages;
 }
 
+function storedEventToSandboxEvent(stored: {
+  sequence: number;
+  eventData: unknown;
+}): AcpEvent | null {
+  if (!isRecord(stored.eventData)) {
+    return null;
+  }
+
+  const method = stored.eventData.method;
+  const params = stored.eventData.params;
+
+  if (typeof method === "string" && isRecord(params)) {
+    return {
+      type: method,
+      sequence: stored.sequence,
+      data: params,
+    };
+  }
+
+  return null;
+}
+
 export async function fetchSessionMessages(
-  sandboxAgentResolver: SandboxAgentClientResolver,
-  labSessionId: string,
-  sandboxSessionId: string
+  labSessionId: string
 ): Promise<ReconstructedMessage[]> {
-  const sandboxAgent = await sandboxAgentResolver.getClient(labSessionId);
-  const events = await sandboxAgent.getEvents(sandboxSessionId);
+  const storedEvents = await getAgentEvents(labSessionId);
+  const events: AcpEvent[] = [];
+
+  for (const stored of storedEvents) {
+    const event = storedEventToSandboxEvent(stored);
+    if (event) {
+      events.push(event);
+    }
+  }
+
   return extractTextFromEvents(events);
 }

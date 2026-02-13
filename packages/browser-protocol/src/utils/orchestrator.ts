@@ -29,14 +29,14 @@ export const createOrchestrator = (
   const errorHandlers: ErrorHandler[] = [];
 
   const notifyStateChange = (sessionId: string, state: BrowserSessionState) => {
-    for (const h of stateChangeHandlers) {
-      h(sessionId, state);
+    for (const stateChangeHandler of stateChangeHandlers) {
+      stateChangeHandler(sessionId, state);
     }
   };
 
   const notifyError = (error: unknown) => {
-    for (const h of errorHandlers) {
-      h(error);
+    for (const errorHandler of errorHandlers) {
+      errorHandler(error);
     }
   };
 

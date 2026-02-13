@@ -8,7 +8,7 @@ import type {
   FileNode,
   FileStatus,
 } from "@/components/review";
-import { getAgentApiUrl } from "./sandbox-agent-session";
+import { getAgentApiUrl } from "./acp-session";
 import { type ChangedFile, useFileStatuses } from "./use-file-statuses";
 
 interface Patch {
@@ -31,6 +31,10 @@ interface FileBrowserState {
   previewContent: string | null;
   previewPatch: Patch | null;
   previewLoading: boolean;
+}
+
+function normalizeFileNodeType(value: string): "file" | "directory" {
+  return value === "directory" ? "directory" : "file";
 }
 
 type FileBrowserAction =
@@ -136,8 +140,8 @@ function getParentPaths(filePath: string): string[] {
   const segments = filePath.split("/");
   const parents: string[] = [];
 
-  for (let i = 1; i < segments.length; i++) {
-    parents.push(segments.slice(0, i).join("/"));
+  for (let segmentIndex = 1; segmentIndex < segments.length; segmentIndex++) {
+    parents.push(segments.slice(0, segmentIndex).join("/"));
   }
 
   return parents;
@@ -166,7 +170,7 @@ async function fetchFileList(
 ): Promise<FileNode[]> {
   const apiUrl = getAgentApiUrl();
   const response = await fetch(
-    `${apiUrl}/sandbox-agent/files/list?sessionId=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(path)}`,
+    `${apiUrl}/acp/files/list?sessionId=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(path)}`,
     {
       headers: { "X-Lab-Session-Id": sessionId },
     }
@@ -187,7 +191,7 @@ async function fetchFileList(
       }) => ({
         name: node.name,
         path: node.path,
-        type: node.type as "file" | "directory",
+        type: normalizeFileNodeType(node.type),
         ignored: node.ignored,
       })
     );
@@ -202,7 +206,7 @@ async function fetchFileContent(
 ): Promise<{ content: string | null; patch: Patch | null }> {
   const apiUrl = getAgentApiUrl();
   const response = await fetch(
-    `${apiUrl}/sandbox-agent/files/read?sessionId=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(path)}`,
+    `${apiUrl}/acp/files/read?sessionId=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(path)}`,
     {
       headers: { "X-Lab-Session-Id": sessionId },
     }

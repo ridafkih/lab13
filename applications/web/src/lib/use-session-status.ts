@@ -37,7 +37,7 @@ export function useSessionStatus(session: Session | null): SessionStatus {
     return "starting";
   }
 
-  if ((session.status as string) === "deleting") {
+  if (String(session.status) === "deleting") {
     return "deleting";
   }
 

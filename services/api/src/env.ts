@@ -2,7 +2,8 @@ import { type } from "arktype";
 
 export const env = type({
   API_PORT: "string",
-  ANTHROPIC_API_KEY: "string",
+  ANTHROPIC_API_KEY: "string?",
+  CLAUDE_CODE_OAUTH_CREDENTIALS: "string?",
   BROWSER_API_URL: "string",
   BROWSER_WS_URL: "string",
   CONTAINER_SCHEME: "string",
@@ -24,4 +25,6 @@ export const env = type({
   AUTH_GITHUB_CLIENT_ID: "string",
   AUTH_GITHUB_CLIENT_SECRET: "string",
   REDIS_URL: "string = 'redis://localhost:6379'",
+  SANDBOX_AGENT_URL: "string = 'http://lab-acp-proxy:3000'",
+  SANDBOX_AGENT_MCP_URL: "string?",
 });

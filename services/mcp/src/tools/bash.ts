@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { parse } from "shell-quote";
 import { z } from "zod/v4";
 import type { ToolContext } from "../types/tool";
+import { resolveBoundLabSessionId } from "../utils/session-binding";
 
 interface WorkspaceContainerResponse {
   runtimeId: string;
@@ -83,6 +84,7 @@ export function bash(server: McpServer, { docker, config }: ToolContext) {
       inputSchema: {
         sessionId: z
           .string()
+          .optional()
           .describe("The Lab session ID (provided in the system prompt)"),
         command: z.string().describe("The bash command to execute"),
         workdir: z
@@ -94,7 +96,7 @@ export function bash(server: McpServer, { docker, config }: ToolContext) {
         timeout: z.number().optional().describe("Timeout in milliseconds"),
       },
     },
-    async (args) => {
+    async (args, extra) => {
       const blocked = findBlockedCommand(args.command);
       if (blocked) {
         return {
@@ -103,9 +105,17 @@ export function bash(server: McpServer, { docker, config }: ToolContext) {
         };
       }
 
+      const resolvedSession = resolveBoundLabSessionId(extra, args.sessionId);
+      if ("error" in resolvedSession) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: resolvedSession.error }],
+        };
+      }
+
       const workspace = await getWorkspaceContainer(
         config.API_BASE_URL,
-        args.sessionId
+        resolvedSession.sessionId
       );
       if (!workspace) {
         return {
@@ -113,7 +123,7 @@ export function bash(server: McpServer, { docker, config }: ToolContext) {
           content: [
             {
               type: "text",
-              text: `Error: Could not find workspace container for session "${args.sessionId}". Make sure the session exists and has a workspace container.`,
+              text: `Error: Could not find workspace container for session "${resolvedSession.sessionId}". Make sure the session exists and has a workspace container.`,
             },
           ],
         };

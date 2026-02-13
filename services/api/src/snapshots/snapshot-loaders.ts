@@ -8,7 +8,7 @@ import {
   findAllSessionSummaries,
   findSessionById,
 } from "../repositories/session.repository";
-import type { SandboxAgentClientResolver } from "../sandbox-agent/client-resolver";
+import { findSessionTasks } from "../repositories/session-task.repository";
 import { formatProxyUrl } from "../shared/naming";
 import type { SessionStateStore } from "../state/session-state-store";
 import { CONTAINER_STATUS, isContainerStatus } from "../types/container";
@@ -52,14 +52,15 @@ export async function loadSessionContainers(
   );
 }
 
-export function loadSessionChangedFiles(
-  _sessionId: string,
-  _sandboxAgentResolver: SandboxAgentClientResolver
-) {
-  // Sandbox Agent doesn't provide a direct diff API.
+export function loadSessionChangedFiles() {
+  // ACP doesn't provide a direct diff API.
   // File diffs are tracked via item.completed events with file_ref parts
   // and published in real-time by the monitor. Return empty for snapshot.
   return [];
+}
+
+export function loadSessionTasks(sessionId: string) {
+  return findSessionTasks(sessionId);
 }
 
 export function loadSessionLogs(sessionId: string, logMonitor: LogMonitor) {
@@ -68,7 +69,6 @@ export function loadSessionLogs(sessionId: string, logMonitor: LogMonitor) {
 
 export async function loadSessionMetadata(
   sessionId: string,
-  _sandboxAgentResolver: SandboxAgentClientResolver,
   sessionStateStore: SessionStateStore
 ) {
   const session = await findSessionById(sessionId);
@@ -91,7 +91,6 @@ type SnapshotLoader = (session: string | null) => Promise<unknown>;
 
 export interface SnapshotLoaderDeps {
   browserService: BrowserService;
-  sandboxAgentResolver: SandboxAgentClientResolver;
   logMonitor: LogMonitor;
   proxyBaseUrl: string;
   sessionStateStore: SessionStateStore;
@@ -100,20 +99,14 @@ export interface SnapshotLoaderDeps {
 export function createSnapshotLoaders(
   deps: SnapshotLoaderDeps
 ): Record<ChannelName, SnapshotLoader> {
-  const {
-    browserService,
-    sandboxAgentResolver,
-    logMonitor,
-    proxyBaseUrl,
-    sessionStateStore,
-  } = deps;
+  const { browserService, logMonitor, proxyBaseUrl, sessionStateStore } = deps;
 
   return {
     projects: () => loadProjects(),
     sessions: () => loadSessions(),
     sessionMetadata: (session) =>
       session
-        ? loadSessionMetadata(session, sandboxAgentResolver, sessionStateStore)
+        ? loadSessionMetadata(session, sessionStateStore)
         : Promise.resolve(null),
     sessionContainers: (session) =>
       session
@@ -123,10 +116,10 @@ export function createSnapshotLoaders(
     sessionPromptEngineers: () => Promise.resolve([]),
     sessionChangedFiles: (session) =>
       session
-        ? Promise.resolve(
-            loadSessionChangedFiles(session, sandboxAgentResolver)
-          )
+        ? Promise.resolve(loadSessionChangedFiles())
         : Promise.resolve(null),
+    sessionTasks: (session) =>
+      session ? loadSessionTasks(session) : Promise.resolve(null),
     sessionBranches: () => Promise.resolve([]),
     sessionLinks: () => Promise.resolve([]),
     sessionLogs: (session) =>

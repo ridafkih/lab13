@@ -3,6 +3,7 @@ import type {
   OrchestrationStatus,
   ResolutionConfidence,
 } from "@lab/database/schema/orchestration-requests";
+import type { AcpClient } from "../acp/client";
 import type { BrowserServiceManager } from "../managers/browser-service.manager";
 import type { PoolManager } from "../managers/pool.manager";
 import type { SessionLifecycleManager } from "../managers/session-lifecycle.manager";
@@ -15,7 +16,6 @@ import {
   findProjectById,
 } from "../repositories/project.repository";
 import { findSessionById } from "../repositories/session.repository";
-import type { SandboxAgentClientResolver } from "../sandbox-agent/client-resolver";
 import { NotFoundError } from "../shared/errors";
 import type { SessionStateStore } from "../state/session-state-store";
 import type { Publisher } from "../types/dependencies";
@@ -37,7 +37,7 @@ interface OrchestrationInput {
   browserService: BrowserServiceManager;
   sessionLifecycle: SessionLifecycleManager;
   poolManager: PoolManager;
-  sandboxAgentResolver: SandboxAgentClientResolver;
+  acp: AcpClient;
   publisher: Publisher;
   sessionStateStore: SessionStateStore;
 }
@@ -56,7 +56,7 @@ interface OrchestrationContext {
   browserService: BrowserServiceManager;
   sessionLifecycle: SessionLifecycleManager;
   poolManager: PoolManager;
-  sandboxAgentResolver: SandboxAgentClientResolver;
+  acp: AcpClient;
   publisher: Publisher;
   sessionStateStore: SessionStateStore;
 }
@@ -112,71 +112,93 @@ function initializeStatusChannel(
 }
 
 async function resolveTargetProject(
-  ctx: OrchestrationContext
+  orchestrationContext: OrchestrationContext
 ): Promise<ProjectResolutionResult> {
-  await transitionTo(ctx.id, "thinking", ctx.publisher);
+  await transitionTo(
+    orchestrationContext.id,
+    "thinking",
+    orchestrationContext.publisher
+  );
 
   const projects = await findAllProjects();
   if (projects.length === 0) {
     throw new NotFoundError("Project");
   }
 
-  const resolution = await resolveProject(ctx.content, projects);
+  const resolution = await resolveProject(
+    orchestrationContext.content,
+    projects
+  );
 
-  await transitionTo(ctx.id, "delegating", ctx.publisher, {
-    resolvedProjectId: resolution.projectId,
-    resolutionConfidence: resolution.confidence,
-    resolutionReasoning: resolution.reasoning,
-    projectName: resolution.projectName,
-  });
+  await transitionTo(
+    orchestrationContext.id,
+    "delegating",
+    orchestrationContext.publisher,
+    {
+      resolvedProjectId: resolution.projectId,
+      resolutionConfidence: resolution.confidence,
+      resolutionReasoning: resolution.reasoning,
+      projectName: resolution.projectName,
+    }
+  );
 
   return resolution;
 }
 
 async function spawnSessionForProject(
-  ctx: OrchestrationContext,
+  orchestrationContext: OrchestrationContext,
   resolution: ProjectResolutionResult
 ): Promise<string> {
-  await transitionTo(ctx.id, "starting", ctx.publisher, {
-    projectName: resolution.projectName,
-  });
+  await transitionTo(
+    orchestrationContext.id,
+    "starting",
+    orchestrationContext.publisher,
+    {
+      projectName: resolution.projectName,
+    }
+  );
 
   const { session } = await spawnSession({
     projectId: resolution.projectId,
-    taskSummary: ctx.content,
-    browserService: ctx.browserService,
-    sessionLifecycle: ctx.sessionLifecycle,
-    poolManager: ctx.poolManager,
-    publisher: ctx.publisher,
+    taskSummary: orchestrationContext.content,
+    browserService: orchestrationContext.browserService,
+    sessionLifecycle: orchestrationContext.sessionLifecycle,
+    poolManager: orchestrationContext.poolManager,
+    publisher: orchestrationContext.publisher,
   });
 
   return session.id;
 }
 
 async function startConversation(
-  ctx: OrchestrationContext,
+  orchestrationContext: OrchestrationContext,
   sessionId: string
 ): Promise<void> {
   await initiateConversation({
     sessionId,
-    task: ctx.content,
-    modelId: ctx.modelId,
-    sandboxAgentResolver: ctx.sandboxAgentResolver,
-    publisher: ctx.publisher,
-    sessionStateStore: ctx.sessionStateStore,
+    task: orchestrationContext.content,
+    modelId: orchestrationContext.modelId,
+    acp: orchestrationContext.acp,
+    publisher: orchestrationContext.publisher,
+    sessionStateStore: orchestrationContext.sessionStateStore,
   });
 }
 
 async function markComplete(
-  ctx: OrchestrationContext,
+  orchestrationContext: OrchestrationContext,
   sessionId: string,
   projectName: string
 ): Promise<void> {
-  await transitionTo(ctx.id, "complete", ctx.publisher, {
-    resolvedSessionId: sessionId,
-    projectName,
-    sessionId,
-  });
+  await transitionTo(
+    orchestrationContext.id,
+    "complete",
+    orchestrationContext.publisher,
+    {
+      resolvedSessionId: sessionId,
+      projectName,
+      sessionId,
+    }
+  );
 }
 
 async function markFailed(
@@ -191,7 +213,7 @@ async function markFailed(
 export async function orchestrate(
   input: OrchestrationInput
 ): Promise<OrchestrationResult> {
-  const { sandboxAgentResolver, publisher, sessionStateStore } = input;
+  const { acp, publisher, sessionStateStore } = input;
 
   if (input.channelId) {
     const existingSession = await findSessionById(input.channelId);
@@ -200,7 +222,7 @@ export async function orchestrate(
         sessionId: input.channelId,
         sandboxSessionId: existingSession.sandboxSessionId,
         content: input.content,
-        sandboxAgentResolver,
+        acp,
         publisher,
         sessionStateStore,
       });
@@ -233,7 +255,7 @@ export async function orchestrate(
     browserService: input.browserService,
     sessionLifecycle: input.sessionLifecycle,
     poolManager: input.poolManager,
-    sandboxAgentResolver,
+    acp,
     publisher,
     sessionStateStore,
   };

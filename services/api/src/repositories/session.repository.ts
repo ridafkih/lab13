@@ -54,8 +54,6 @@ export function updateSessionFields(
   sessionId: string,
   fields: {
     sandboxSessionId?: string;
-    sandboxAgentPort?: number;
-    sandboxAgentContainerId?: string;
     workspaceDirectory?: string;
     title?: string;
   }
@@ -65,12 +63,6 @@ export function updateSessionFields(
 
     if (fields.sandboxSessionId) {
       setFields.sandboxSessionId = fields.sandboxSessionId;
-    }
-    if (fields.sandboxAgentPort !== undefined) {
-      setFields.sandboxAgentPort = fields.sandboxAgentPort;
-    }
-    if (fields.sandboxAgentContainerId) {
-      setFields.sandboxAgentContainerId = fields.sandboxAgentContainerId;
     }
     if (fields.workspaceDirectory) {
       setFields.workspaceDirectory = fields.workspaceDirectory;

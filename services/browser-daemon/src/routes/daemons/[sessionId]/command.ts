@@ -53,20 +53,34 @@ async function transformRecordingResponse(response: {
   if (typeof response.data !== "object" || response.data === null) {
     return response;
   }
-  if (!("path" in response.data) || typeof response.data.path !== "string") {
+  const hasRecordingData = (
+    value: unknown
+  ): value is { path: string; frames?: unknown } => {
+    return (
+      typeof value === "object" &&
+      value !== null &&
+      "path" in value &&
+      typeof value.path === "string"
+    );
+  };
+
+  if (!hasRecordingData(response.data)) {
     return response;
   }
 
-  const data = response.data as { path: string; frames?: number };
+  const recordingPath = response.data.path;
+  const recordingFrames = response.data.frames;
+  const normalizedFrames =
+    typeof recordingFrames === "number" ? recordingFrames : undefined;
 
   try {
-    const buffer = await readFile(data.path);
+    const buffer = await readFile(recordingPath);
     const base64 = buffer.toString("base64");
     return {
       ...response,
       data: {
-        path: data.path,
-        frames: data.frames,
+        path: recordingPath,
+        frames: normalizedFrames,
         base64,
         mimeType: "video/webm",
       },
@@ -75,7 +89,7 @@ async function transformRecordingResponse(response: {
     return {
       ...response,
       success: false,
-      error: `Failed to read recording file: ${data.path}`,
+      error: `Failed to read recording file: ${recordingPath}`,
     };
   }
 }

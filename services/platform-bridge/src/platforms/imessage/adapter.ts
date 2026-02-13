@@ -99,7 +99,12 @@ class IMessageAdapter implements PlatformAdapter {
       }
 
       try {
-        await this.dispatchMessage(message, message.text as string);
+        const messageText = message.text;
+        if (!messageText) {
+          widelog.set("outcome", "skipped_no_text");
+          return;
+        }
+        await this.dispatchMessage(message, messageText);
         widelog.set("outcome", "success");
       } catch (error) {
         widelog.set("outcome", "error");

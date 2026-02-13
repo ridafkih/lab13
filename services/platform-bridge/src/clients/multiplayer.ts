@@ -65,15 +65,17 @@ function isServerMessage(value: unknown): value is WireServerMessage {
     return false;
   }
 
-  const { type } = value as { type: unknown };
+  const valueRecord = Object.fromEntries(Object.entries(value));
+  const type = valueRecord.type;
 
   if (type === "pong") {
     return true;
   }
-  if (!("channel" in value)) {
+  const channel = valueRecord.channel;
+  if (channel === undefined) {
     return false;
   }
-  if (typeof (value as { channel: unknown }).channel !== "string") {
+  if (typeof channel !== "string") {
     return false;
   }
 
@@ -82,11 +84,10 @@ function isServerMessage(value: unknown): value is WireServerMessage {
     case "delta":
     case "event":
       return true;
-    case "error":
-      return (
-        "error" in value &&
-        typeof (value as { error: unknown }).error === "string"
-      );
+    case "error": {
+      const errorMessage = valueRecord.error;
+      return typeof errorMessage === "string";
+    }
     default:
       return false;
   }

@@ -65,12 +65,10 @@ const PATCH = withParams<{ sessionId: string }>(
     await findSessionByIdOrThrow(sessionId);
 
     const body = await parseRequestBody(request, patchSessionSchema);
-    widelog.set(
-      "session.updated_fields",
-      Object.keys(body)
-        .filter((k) => body[k as keyof typeof body] !== undefined)
-        .join(",")
-    );
+    const definedBodyKeys = Object.entries(body)
+      .filter(([, fieldValue]) => fieldValue !== undefined)
+      .map(([fieldName]) => fieldName);
+    widelog.set("session.updated_fields", definedBodyKeys.join(","));
 
     const updated = await updateSessionFields(sessionId, {
       sandboxSessionId: body.sandboxSessionId,

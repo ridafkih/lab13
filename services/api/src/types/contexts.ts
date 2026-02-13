@@ -1,10 +1,9 @@
 import type { ImageStore } from "@lab/context";
+import type { AcpClient } from "../acp/client";
 import type { BrowserServiceManager } from "../managers/browser-service.manager";
 import type { PoolManager } from "../managers/pool.manager";
 import type { SessionLifecycleManager } from "../managers/session-lifecycle.manager";
 import type { LogMonitor } from "../monitors/log.monitor";
-import type { SandboxAgentClientResolver } from "../sandbox-agent/client-resolver";
-import type { SandboxAgentContainerManager } from "../sandbox-agent/container-manager";
 import type { SessionStateStore } from "../state/session-state-store";
 import type { Publisher, Sandbox } from "./dependencies";
 import type { PromptService } from "./prompt";
@@ -21,8 +20,7 @@ export interface SessionContext {
 
 export interface InfraContext {
   sandbox: Sandbox;
-  sandboxAgentResolver: SandboxAgentClientResolver;
-  sandboxAgentContainerManager: SandboxAgentContainerManager;
+  acp: AcpClient;
   publisher: Publisher;
   sessionStateStore: SessionStateStore;
 }

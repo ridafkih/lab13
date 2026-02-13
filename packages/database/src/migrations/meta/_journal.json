@@ -50,6 +50,34 @@
       "when": 1770758650247,
       "tag": "0006_serious_leader",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1770849458468,
+      "tag": "0007_lucky_black_bolt",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1770858589563,
+      "tag": "0008_heavy_mimic",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1770863314818,
+      "tag": "0009_fluffy_alex_wilder",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1771034400000,
+      "tag": "0010_solid_todo_tracker",
+      "breakpoints": true
     }
   ]
 }

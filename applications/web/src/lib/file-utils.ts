@@ -14,8 +14,12 @@ interface ValidationResult {
   error?: string;
 }
 
+function isAllowedImageType(value: string): value is AllowedImageType {
+  return ALLOWED_IMAGE_TYPES.some((allowedType) => allowedType === value);
+}
+
 export function validateImageFile(file: File): ValidationResult {
-  if (!ALLOWED_IMAGE_TYPES.includes(file.type as AllowedImageType)) {
+  if (!isAllowedImageType(file.type)) {
     return {
       valid: false,
       error: `Invalid file type "${file.type}". Allowed types: JPEG, PNG, GIF, WebP`,
@@ -49,5 +53,5 @@ export function fileToBase64(file: File): Promise<string> {
 }
 
 export function isImageFile(file: File): boolean {
-  return ALLOWED_IMAGE_TYPES.includes(file.type as AllowedImageType);
+  return isAllowedImageType(file.type);
 }

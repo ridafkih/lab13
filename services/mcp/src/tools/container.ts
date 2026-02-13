@@ -2,6 +2,7 @@ import type { DockerClient } from "@lab/sandbox-docker";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
 import type { ToolContext } from "../types/tool";
+import { resolveBoundLabSessionId } from "../utils/session-binding";
 
 interface SessionServicesResponse {
   sessionId: string;
@@ -94,6 +95,24 @@ async function ensureSharedContainerConnected(
 }
 
 export function container(server: McpServer, { docker, config }: ToolContext) {
+  function resolveSessionId(
+    providedSessionId: string | undefined,
+    extra: unknown
+  ): { sessionId: string } | { error: ToolResult } {
+    const resolvedSession = resolveBoundLabSessionId(
+      extra as Parameters<typeof resolveBoundLabSessionId>[0],
+      providedSessionId
+    );
+    if ("error" in resolvedSession) {
+      return {
+        error: errorResult(
+          `${resolvedSession.error} (tool: containers/logs/restart_process/internal_url/public_url)`
+        ),
+      };
+    }
+    return { sessionId: resolvedSession.sessionId };
+  }
+
   server.registerTool(
     "containers",
     {
@@ -102,16 +121,21 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
       inputSchema: {
         sessionId: z
           .string()
+          .optional()
           .describe("The Lab session ID (provided in the system prompt)"),
       },
     },
-    async (args) => {
+    async (args, extra) => {
+      const resolved = resolveSessionId(args.sessionId, extra);
+      if ("error" in resolved) {
+        return resolved.error;
+      }
       const data = await getSessionServices(
         config.API_BASE_URL,
-        args.sessionId
+        resolved.sessionId
       );
       if (!data) {
-        return sessionNotFoundError(args.sessionId);
+        return sessionNotFoundError(resolved.sessionId);
       }
 
       if (data.services.length === 0) {
@@ -137,6 +161,7 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
       inputSchema: {
         sessionId: z
           .string()
+          .optional()
           .describe("The Lab session ID (provided in the system prompt)"),
         containerId: z.string().describe("The containerId (from `containers`)"),
         tail: z
@@ -145,13 +170,17 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
           .describe("Number of lines to retrieve (default: 100)"),
       },
     },
-    async (args) => {
+    async (args, extra) => {
+      const resolved = resolveSessionId(args.sessionId, extra);
+      if ("error" in resolved) {
+        return resolved.error;
+      }
       const data = await getSessionServices(
         config.API_BASE_URL,
-        args.sessionId
+        resolved.sessionId
       );
       if (!data) {
-        return sessionNotFoundError(args.sessionId);
+        return sessionNotFoundError(resolved.sessionId);
       }
 
       const service = data.services.find(
@@ -190,6 +219,7 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
       inputSchema: {
         sessionId: z
           .string()
+          .optional()
           .describe("The Lab session ID (provided in the system prompt)"),
         containerId: z
           .string()
@@ -200,13 +230,17 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
           .describe("Seconds to wait before killing (default: 10)"),
       },
     },
-    async (args) => {
+    async (args, extra) => {
+      const resolved = resolveSessionId(args.sessionId, extra);
+      if ("error" in resolved) {
+        return resolved.error;
+      }
       const data = await getSessionServices(
         config.API_BASE_URL,
-        args.sessionId
+        resolved.sessionId
       );
       if (!data) {
-        return sessionNotFoundError(args.sessionId);
+        return sessionNotFoundError(resolved.sessionId);
       }
 
       const service = data.services.find(
@@ -241,17 +275,22 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
       inputSchema: {
         sessionId: z
           .string()
+          .optional()
           .describe("The Lab session ID (provided in the system prompt)"),
         port: z.number().describe("The port number (from `containers`)"),
       },
     },
-    async (args) => {
+    async (args, extra) => {
+      const resolved = resolveSessionId(args.sessionId, extra);
+      if ("error" in resolved) {
+        return resolved.error;
+      }
       const data = await getSessionServices(
         config.API_BASE_URL,
-        args.sessionId
+        resolved.sessionId
       );
       if (!data) {
-        return sessionNotFoundError(args.sessionId);
+        return sessionNotFoundError(resolved.sessionId);
       }
 
       const service = data.services.find(({ ports }) =>
@@ -265,17 +304,17 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
       try {
         await ensureSharedContainerConnected(
           docker,
-          args.sessionId,
+          resolved.sessionId,
           config.BROWSER_CONTAINER_NAME
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return errorResult(
-          `Error: Failed to ensure browser connectivity for session "${args.sessionId}": ${message}`
+          `Error: Failed to ensure browser connectivity for session "${resolved.sessionId}": ${message}`
         );
       }
 
-      const internalUrl = `${config.CONTAINER_SCHEME}//${args.sessionId}--${args.port}:${args.port}`;
+      const internalUrl = `${config.CONTAINER_SCHEME}//${resolved.sessionId}--${args.port}:${args.port}`;
 
       return textResult(
         `Internal URL: ${internalUrl}\n\nYou can use this URL with:\n- agent-browser: Navigate to this URL to interact with the service\n- curl/fetch: Make HTTP requests from within the workspace container\n\n This URL is not relevant to the user.`
@@ -291,17 +330,22 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
       inputSchema: {
         sessionId: z
           .string()
+          .optional()
           .describe("The Lab session ID (provided in the system prompt)"),
         port: z.number().describe("The port number (from `containers`)"),
       },
     },
-    async (args) => {
+    async (args, extra) => {
+      const resolved = resolveSessionId(args.sessionId, extra);
+      if ("error" in resolved) {
+        return resolved.error;
+      }
       const data = await getSessionServices(
         config.API_BASE_URL,
-        args.sessionId
+        resolved.sessionId
       );
       if (!data) {
-        return sessionNotFoundError(args.sessionId);
+        return sessionNotFoundError(resolved.sessionId);
       }
 
       const service = data.services.find(({ ports }) =>
@@ -313,7 +357,7 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
       }
 
       const externalUrl = new URL(data.proxyBaseUrl);
-      externalUrl.hostname = `${args.sessionId}--${args.port}.${externalUrl.hostname}`;
+      externalUrl.hostname = `${resolved.sessionId}--${args.port}.${externalUrl.hostname}`;
 
       return textResult(
         `External URL: ${externalUrl.origin}\n\nShare this URL with the user so they can access the service in their browser.`

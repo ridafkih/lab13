@@ -36,7 +36,7 @@ const POST: Handler<OrchestrationContext> = async ({ request, context }) => {
     browserService: context.browserService,
     sessionLifecycle: context.sessionLifecycle,
     poolManager: context.poolManager,
-    sandboxAgentResolver: context.sandboxAgentResolver,
+    acp: context.acp,
     publisher: context.publisher,
     sessionStateStore: context.sessionStateStore,
   });
