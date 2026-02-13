@@ -61,6 +61,7 @@ export function createCreateSessionTool(context: CreateSessionToolContext) {
           acp: context.acp,
           publisher: context.publisher,
           sessionStateStore: context.sessionStateStore,
+          sessionLifecycle: context.sessionLifecycle,
         }).catch((error) => {
           widelog.context(() => {
             widelog.set(

@@ -459,7 +459,7 @@ export function github(server: McpServer, { config }: ToolContext) {
   };
 
   createHierarchicalTool(server, {
-    name: "gh",
+    name: "GitHub",
     description: "GitHub operations (PRs, issues, repo info, CI status)",
     tree: githubTree,
   });

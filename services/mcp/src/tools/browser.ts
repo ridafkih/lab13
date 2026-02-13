@@ -1022,7 +1022,7 @@ export function browser(server: McpServer, { config }: ToolContext) {
   };
 
   createHierarchicalTool(server, {
-    name: "browser",
+    name: "Browser",
     description: "Browser automation - run with no command to see categories",
     sessionParam: "sessionId",
     tree: browserTree,

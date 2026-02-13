@@ -5,78 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1770330919554,
-      "tag": "0000_kind_clea",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1770619310106,
-      "tag": "0001_bumpy_beyonder",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1770621033409,
-      "tag": "0002_absurd_ted_forrester",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1770659049809,
-      "tag": "0003_optimal_vermin",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1770702007106,
-      "tag": "0004_spicy_post",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1770749502339,
-      "tag": "0005_unique_madame_masque",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1770758650247,
-      "tag": "0006_serious_leader",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1770849458468,
-      "tag": "0007_lucky_black_bolt",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1770858589563,
-      "tag": "0008_heavy_mimic",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1770863314818,
-      "tag": "0009_fluffy_alex_wilder",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1771034400000,
-      "tag": "0010_solid_todo_tracker",
+      "when": 1771018251480,
+      "tag": "0000_stale_peter_parker",
       "breakpoints": true
     }
   ]

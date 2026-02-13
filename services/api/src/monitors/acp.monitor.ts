@@ -4,9 +4,23 @@ import {
   publishInferenceStatus,
   publishSessionCompletion,
 } from "../acp/publisher-adapter";
+import {
+  extractTodoEvent,
+  mapToReplaceTaskRows,
+  mapToUpsertTaskRows,
+} from "../acp/todo-tracker";
 import { TIMING } from "../config/constants";
 import { widelog } from "../logging";
+import {
+  getMaxSequence,
+  storeAgentEvent,
+} from "../repositories/agent-event.repository";
 import { findRunningSessions } from "../repositories/session.repository";
+import {
+  findSessionTasks,
+  replaceSessionTasks,
+  upsertSessionTasks,
+} from "../repositories/session-task.repository";
 import type { DeferredPublisher } from "../shared/deferred-publisher";
 import {
   INFERENCE_STATUS,
@@ -66,6 +80,9 @@ class SessionTracker {
   readonly labSessionId: string;
   private unsubscribe: (() => void) | null = null;
   private stopped = false;
+  private activeAssistantPreview = "";
+  private nextSequence: number | null = null;
+  private persistenceQueue: Promise<void> = Promise.resolve();
 
   private readonly acp: AcpClient;
   private readonly getPublisher: () => Publisher;
@@ -93,7 +110,6 @@ class SessionTracker {
       this.unsubscribe();
       this.unsubscribe = null;
     }
-    this.sessionStateStore.clear(this.labSessionId);
     this.completionTimerManager.clearSession(this.labSessionId);
   }
 
@@ -112,11 +128,67 @@ class SessionTracker {
         if (this.stopped) {
           return;
         }
+        this.enqueuePersistence(envelope);
         const event = envelopeToSandboxEvent(envelope);
         if (event) {
           this.processEvent(event);
         }
       }
+    );
+  }
+
+  private enqueuePersistence(envelope: unknown): void {
+    this.persistenceQueue = this.persistenceQueue
+      .then(() => this.persistEnvelope(envelope))
+      .catch((error) => {
+        widelog.context(() => {
+          widelog.set("event_name", "acp.event_persist_failed");
+          widelog.set("session_id", this.labSessionId);
+          widelog.set("outcome", "error");
+          widelog.errorFields(error);
+          widelog.flush();
+        });
+      });
+  }
+
+  private async persistEnvelope(envelope: unknown): Promise<void> {
+    if (this.nextSequence === null) {
+      this.nextSequence = (await getMaxSequence(this.labSessionId)) + 1;
+    }
+
+    const sequence = this.nextSequence;
+    this.nextSequence += 1;
+
+    await storeAgentEvent(this.labSessionId, sequence, envelope);
+    if (typeof envelope === "object" && envelope !== null) {
+      this.getPublisher().publishEvent(
+        "sessionAcpEvents",
+        { uuid: this.labSessionId },
+        {
+          sequence,
+          envelope: Object.fromEntries(Object.entries(envelope)),
+        }
+      );
+    }
+
+    const parsedTodoEvent = extractTodoEvent(envelope);
+    if (!parsedTodoEvent) {
+      return;
+    }
+
+    if (parsedTodoEvent.mode === "replace") {
+      const taskRows = mapToReplaceTaskRows(parsedTodoEvent);
+      await replaceSessionTasks(this.labSessionId, taskRows);
+    } else {
+      const taskRows = mapToUpsertTaskRows(parsedTodoEvent);
+      await upsertSessionTasks(this.labSessionId, taskRows);
+    }
+
+    const snapshot = await findSessionTasks(this.labSessionId);
+    this.getPublisher().publishSnapshot(
+      "sessionTasks",
+      { uuid: this.labSessionId },
+      snapshot
     );
   }
 
@@ -155,21 +227,35 @@ class SessionTracker {
       INFERENCE_STATUS.GENERATING
     );
 
-    const text = extractTextFromEvent(event as never);
+    if (event.type === "turn.started" || event.type === "item.started") {
+      this.activeAssistantPreview = "";
+    }
 
-    if (text) {
-      this.sessionStateStore.setLastMessage(this.labSessionId, text);
+    const text = extractTextFromEvent(event as never);
+    const lastMessage =
+      event.type === "item.delta" && text
+        ? this.appendAssistantPreview(text)
+        : undefined;
+
+    if (lastMessage) {
+      this.sessionStateStore.setLastMessage(this.labSessionId, lastMessage);
     }
 
     publishInferenceStatus(
       this.getPublisher(),
       this.labSessionId,
       INFERENCE_STATUS.GENERATING,
-      text ?? undefined
+      lastMessage
     );
   }
 
+  private appendAssistantPreview(text: string): string {
+    this.activeAssistantPreview += text;
+    return this.activeAssistantPreview;
+  }
+
   private handleTurnEnded(): void {
+    this.activeAssistantPreview = "";
     this.sessionStateStore.setInferenceStatus(
       this.labSessionId,
       INFERENCE_STATUS.IDLE
@@ -246,6 +332,23 @@ export class AcpMonitor {
     this.trackers.clear();
   }
 
+  ensureSessionTracked(sessionId: string): void {
+    if (this.trackers.has(sessionId)) {
+      return;
+    }
+
+    this.trackers.set(
+      sessionId,
+      new SessionTracker(
+        sessionId,
+        this.acp,
+        () => this.deferredPublisher.get(),
+        this.completionTimerManager,
+        this.sessionStateStore
+      )
+    );
+  }
+
   private async runSyncLoop(): Promise<void> {
     while (!this.abortController.signal.aborted) {
       await new Promise((resolve) =>
@@ -285,18 +388,7 @@ export class AcpMonitor {
     }
 
     for (const { id } of active) {
-      if (!this.trackers.has(id)) {
-        this.trackers.set(
-          id,
-          new SessionTracker(
-            id,
-            this.acp,
-            () => this.deferredPublisher.get(),
-            this.completionTimerManager,
-            this.sessionStateStore
-          )
-        );
-      }
+      this.ensureSessionTracked(id);
     }
   }
 }

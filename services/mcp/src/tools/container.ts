@@ -106,7 +106,7 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
     if ("error" in resolvedSession) {
       return {
         error: errorResult(
-          `${resolvedSession.error} (tool: containers/logs/restart_process/internal_url/public_url)`
+          `${resolvedSession.error} (tool: Containers/Logs/RestartProcess/InternalUrl/PublicUrl)`
         ),
       };
     }
@@ -114,7 +114,7 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
   }
 
   server.registerTool(
-    "containers",
+    "Containers",
     {
       description:
         "List all running containers in the session. Shows containerId, image, status, and exposed ports.",
@@ -154,16 +154,16 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
   );
 
   server.registerTool(
-    "logs",
+    "Logs",
     {
       description:
-        "View recent logs from a container. Use `containers` to see available IDs.",
+        "View recent logs from a container. Use `Containers` to see available IDs.",
       inputSchema: {
         sessionId: z
           .string()
           .optional()
           .describe("The Lab session ID (provided in the system prompt)"),
-        containerId: z.string().describe("The containerId (from `containers`)"),
+        containerId: z.string().describe("The containerId (from `Containers`)"),
         tail: z
           .number()
           .optional()
@@ -212,10 +212,10 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
   );
 
   server.registerTool(
-    "restart_process",
+    "RestartProcess",
     {
       description:
-        "Restart a container. Use `containers` to see available IDs.",
+        "Restart a container. Use `Containers` to see available IDs.",
       inputSchema: {
         sessionId: z
           .string()
@@ -223,7 +223,7 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
           .describe("The Lab session ID (provided in the system prompt)"),
         containerId: z
           .string()
-          .describe("The containerId to restart (from `containers`)"),
+          .describe("The containerId to restart (from `Containers`)"),
         timeout: z
           .number()
           .optional()
@@ -268,7 +268,7 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
   );
 
   server.registerTool(
-    "internal_url",
+    "InternalUrl",
     {
       description:
         "Get the internal URL for a container port. Use with the browser tool or curl/fetch.",
@@ -277,7 +277,7 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
           .string()
           .optional()
           .describe("The Lab session ID (provided in the system prompt)"),
-        port: z.number().describe("The port number (from `containers`)"),
+        port: z.number().describe("The port number (from `Containers`)"),
       },
     },
     async (args, extra) => {
@@ -323,7 +323,7 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
   );
 
   server.registerTool(
-    "public_url",
+    "PublicUrl",
     {
       description:
         "Get the public URL for a container port. Share with the user to access in their browser.",
@@ -332,7 +332,7 @@ export function container(server: McpServer, { docker, config }: ToolContext) {
           .string()
           .optional()
           .describe("The Lab session ID (provided in the system prompt)"),
-        port: z.number().describe("The port number (from `containers`)"),
+        port: z.number().describe("The port number (from `Containers`)"),
       },
     },
     async (args, extra) => {

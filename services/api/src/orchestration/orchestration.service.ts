@@ -181,6 +181,7 @@ async function startConversation(
     acp: orchestrationContext.acp,
     publisher: orchestrationContext.publisher,
     sessionStateStore: orchestrationContext.sessionStateStore,
+    sessionLifecycle: orchestrationContext.sessionLifecycle,
   });
 }
 

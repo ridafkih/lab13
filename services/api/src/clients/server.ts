@@ -25,6 +25,7 @@ import { widelog } from "../logging";
 import type { BrowserServiceManager } from "../managers/browser-service.manager";
 import type { PoolManager } from "../managers/pool.manager";
 import type { SessionLifecycleManager } from "../managers/session-lifecycle.manager";
+import type { AcpMonitor } from "../monitors/acp.monitor";
 import type { LogMonitor } from "../monitors/log.monitor";
 import { reconcileNetworkConnections } from "../runtime/network";
 import { AppError, ServiceUnavailableError } from "../shared/errors";
@@ -58,6 +59,7 @@ interface ApiServerServices {
   sandbox: Sandbox;
   acp: AcpClient;
   promptService: PromptService;
+  acpMonitor: AcpMonitor;
   imageStore?: ImageStore;
   widelog: Widelog;
   sessionStateStore: SessionStateStore;
@@ -99,6 +101,7 @@ export class ApiServer {
       sandbox,
       acp,
       promptService,
+      acpMonitor,
       imageStore,
       sessionStateStore,
     } = this.services;
@@ -111,6 +114,8 @@ export class ApiServer {
       sandbox,
       promptService,
       sessionStateStore,
+      ensureSessionMonitor: (sessionId) =>
+        acpMonitor.ensureSessionTracked(sessionId),
       mcpUrl: this.config.mcpUrl,
     });
 

@@ -2,15 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
-import {
-  createAcpEventParser,
-  getAgentApiUrl,
-  resetTranslationState,
-  translateAcpEvent,
-  useAcpSession,
-} from "./acp-session";
+import { createAcpEventTranslator, getAgentApiUrl } from "./acp-session";
 import type { AcpEvent, ContentPart } from "./acp-types";
 import { api } from "./api";
+import { useMultiplayer } from "./multiplayer";
 import type { Attachment } from "./use-attachments";
 
 export interface MessageState {
@@ -50,6 +45,45 @@ interface UseAgentResult {
 interface SessionData {
   sandboxSessionId: string;
   messages: MessageState[];
+}
+
+interface TranslatorState {
+  activeItemId: string | null;
+  turnCounter: number;
+  emittedToolCallIds: string[];
+}
+
+interface AccumulatorState {
+  messages: MessageState[];
+  itemIdToMessageId: Array<[string, string]>;
+  currentAssistantId: string | null;
+}
+
+interface ReplayCheckpointState {
+  translator: TranslatorState;
+  accumulator: AccumulatorState;
+  questionRequests: Array<[string, string]>;
+}
+
+interface ReplayCheckpoint {
+  parserVersion: number;
+  lastSequence: number;
+  replayState: ReplayCheckpointState;
+}
+
+interface AcpEventsSnapshot {
+  checkpoint: ReplayCheckpoint | null;
+  events: Array<{ sequence: number; envelope: Record<string, unknown> }>;
+}
+
+const REPLAY_PARSER_VERSION = 1;
+
+function createOptimisticUserMessage(content: string): MessageState {
+  return {
+    id: `optimistic-user-${Date.now()}`,
+    role: "user",
+    parts: [{ type: "text", text: content }],
+  };
 }
 
 function getString(value: unknown, fallback = ""): string {
@@ -224,6 +258,29 @@ class MessageAccumulator {
     }));
   }
 
+  getState(): AccumulatorState {
+    return {
+      messages: this.messages.map((message) => ({
+        ...message,
+        parts: [...message.parts],
+      })),
+      itemIdToMessageId: [...this.itemIdToMessageId.entries()],
+      currentAssistantId: this.currentAssistantId,
+    };
+  }
+
+  setState(state: AccumulatorState): void {
+    this.messages = state.messages.map((message) => ({
+      ...message,
+      parts: [...message.parts],
+    }));
+    this.itemIdToMessageId.clear();
+    for (const [itemId, messageId] of state.itemIdToMessageId) {
+      this.itemIdToMessageId.set(itemId, messageId);
+    }
+    this.currentAssistantId = state.currentAssistantId;
+  }
+
   private handleItemStarted(event: AcpEvent): void {
     const item = extractEventItem(event.data);
     const itemId = extractItemId(item, `item-${event.sequence}`);
@@ -382,50 +439,13 @@ async function fetchSessionData(
   };
 }
 
-async function readSSEStream(
-  response: Response,
-  onEvent: (event: AcpEvent) => void
-): Promise<void> {
-  const body = response.body;
-  if (!body) {
-    return;
-  }
-
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  const parser = createAcpEventParser(onEvent);
-
-  try {
-    const processReader = async (): Promise<void> => {
-      const { done, value } = await reader.read();
-      if (done) {
-        return;
-      }
-
-      parser.feed(decoder.decode(value, { stream: true }));
-      await processReader();
-    };
-
-    await processReader();
-    const trailing = decoder.decode();
-    if (trailing) {
-      parser.feed(trailing);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
 function getAgentMessagesKey(labSessionId: string): string {
   return `agent-messages-${labSessionId}`;
 }
 
 export function useAgent(labSessionId: string): UseAgentResult {
-  const { publish } = useAcpSession();
+  const { useChannel, useChannelEvent } = useMultiplayer();
   const { mutate } = useSWRConfig();
-  const [streamedMessages, setStreamedMessages] = useState<
-    MessageState[] | null
-  >(null);
   const [error, setError] = useState<Error | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>({
@@ -435,8 +455,11 @@ export function useAgent(labSessionId: string): UseAgentResult {
     () => new Map()
   );
   const sendingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sessionDataRef = useRef<SessionData | null>(null);
   const accumulatorRef = useRef<MessageAccumulator | null>(null);
+  const translatorRef = useRef(createAcpEventTranslator());
+  const lastReplayVersionRef = useRef<string>("");
+  const lastProcessedSequenceRef = useRef<number>(-1);
+  const pendingOptimisticByTextRef = useRef<Map<string, string[]>>(new Map());
 
   const isOptimistic = labSessionId === "new";
 
@@ -450,70 +473,109 @@ export function useAgent(labSessionId: string): UseAgentResult {
   );
 
   useEffect(() => {
-    sessionDataRef.current = sessionData ?? null;
     if (swrError) {
       setError(
         swrError instanceof Error ? swrError : new Error("Failed to initialize")
       );
     }
-  }, [sessionData, swrError]);
+  }, [swrError]);
 
-  const messages = streamedMessages ?? sessionData?.messages ?? [];
+  const messages = sessionData?.messages ?? [];
   const sandboxSessionId = sessionData?.sandboxSessionId ?? null;
+  const messagesKey = getAgentMessagesKey(labSessionId);
+  const acpEventsSnapshot = useChannel(
+    "sessionAcpEvents",
+    { uuid: labSessionId },
+    { enabled: Boolean(labSessionId && !isOptimistic) }
+  ) as AcpEventsSnapshot;
 
-  useEffect(() => {
-    if (!sandboxSessionId) {
+  const clearSendingTimeout = () => {
+    if (sendingTimeoutRef.current) {
+      clearTimeout(sendingTimeoutRef.current);
+      sendingTimeoutRef.current = null;
+    }
+  };
+
+  const persistReplayCheckpoint = () => {
+    const messageAccumulator = accumulatorRef.current;
+    const translator = translatorRef.current;
+    if (!messageAccumulator || lastProcessedSequenceRef.current < 0) {
       return;
     }
 
-    const abortController = new AbortController();
-    const { signal } = abortController;
-
     const apiUrl = getAgentApiUrl();
-    resetTranslationState();
-    const messageAccumulator = new MessageAccumulator();
-    accumulatorRef.current = messageAccumulator;
-
-    const clearSendingTimeout = () => {
-      if (sendingTimeoutRef.current) {
-        clearTimeout(sendingTimeoutRef.current);
-        sendingTimeoutRef.current = null;
-      }
+    const body = {
+      parserVersion: REPLAY_PARSER_VERSION,
+      lastSequence: lastProcessedSequenceRef.current,
+      replayState: {
+        translator: translator.getState(),
+        accumulator: messageAccumulator.getState(),
+        questionRequests: [...questionRequests.entries()],
+      },
     };
 
-    const handleTurnEnded = () => {
-      clearSendingTimeout();
-      setIsSending(false);
-      setSessionStatus({ type: "idle" });
+    fetch(`${apiUrl}/acp/replay-checkpoint`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Lab-Session-Id": labSessionId,
+      },
+      body: JSON.stringify(body),
+    }).catch(() => undefined);
+  };
+
+  const handleTranslatedEvent = (event: AcpEvent) => {
+    const messageAccumulator = accumulatorRef.current;
+    if (!messageAccumulator) {
+      return;
+    }
+    lastProcessedSequenceRef.current = Math.max(
+      lastProcessedSequenceRef.current,
+      event.sequence
+    );
+
+    const setMessagesFromAccumulator = () => {
+      const pendingIds = new Set(
+        [...pendingOptimisticByTextRef.current.values()].flat()
+      );
+      const accumulatedMessages = messageAccumulator.getMessages();
 
       mutate(
-        getAgentMessagesKey(labSessionId),
-        (current: SessionData | null | undefined) => {
-          if (!current) {
-            return current;
-          }
+        messagesKey,
+        (current: SessionData | null | undefined): SessionData => {
+          const pendingOptimisticMessages =
+            current?.messages.filter((message) => pendingIds.has(message.id)) ??
+            [];
+
           return {
-            ...current,
-            messages: messageAccumulator.getMessages(),
+            sandboxSessionId:
+              current?.sandboxSessionId ?? sandboxSessionId ?? "",
+            messages: [...accumulatedMessages, ...pendingOptimisticMessages],
           };
         },
         { revalidate: false }
       );
     };
 
-    const handleError = (event: AcpEvent) => {
+    const handleTurnEnded = () => {
+      clearSendingTimeout();
+      setIsSending(false);
+      setSessionStatus({ type: "idle" });
+    };
+
+    const handleError = (acpEvent: AcpEvent) => {
       clearSendingTimeout();
       setIsSending(false);
       const message =
-        typeof event.data.message === "string"
-          ? event.data.message
+        typeof acpEvent.data.message === "string"
+          ? acpEvent.data.message
           : "An error occurred";
       setSessionStatus({ type: "error", message });
     };
 
-    const handleQuestionRequested = (event: AcpEvent) => {
-      const questionId = getString(event.data.id) || null;
-      const callId = getString(event.data.call_id) || null;
+    const handleQuestionRequested = (acpEvent: AcpEvent) => {
+      const questionId = getString(acpEvent.data.id) || null;
+      const callId = getString(acpEvent.data.call_id) || null;
       if (questionId && callId) {
         setQuestionRequests((previous) =>
           new Map(previous).set(callId, questionId)
@@ -521,8 +583,8 @@ export function useAgent(labSessionId: string): UseAgentResult {
       }
     };
 
-    const handleQuestionResolved = (event: AcpEvent) => {
-      const callId = getString(event.data.call_id) || null;
+    const handleQuestionResolved = (acpEvent: AcpEvent) => {
+      const callId = getString(acpEvent.data.call_id) || null;
       if (callId) {
         setQuestionRequests((previous) => {
           const next = new Map(previous);
@@ -532,128 +594,211 @@ export function useAgent(labSessionId: string): UseAgentResult {
       }
     };
 
-    const processEvent = (event: AcpEvent) => {
-      publish(event);
-      messageAccumulator.processEvent(event);
-
-      switch (event.type) {
-        case "turn.started":
-          setSessionStatus({ type: "busy" });
-          break;
-        case "turn.ended":
-          handleTurnEnded();
-          break;
-        case "error":
-          handleError(event);
-          break;
-        case "question.requested":
-          handleQuestionRequested(event);
-          break;
-        case "question.resolved":
-          handleQuestionResolved(event);
-          break;
-        default:
-          break;
+    const handleUserMessageAcknowledged = (acpEvent: AcpEvent) => {
+      if (acpEvent.type !== "item.started") {
+        return;
       }
 
+      const item = extractEventItem(acpEvent.data);
       if (
-        event.type === "item.started" ||
-        event.type === "item.delta" ||
-        event.type === "item.completed"
+        getString(item.role) !== "user" ||
+        getString(item.kind) !== "message"
       ) {
-        setStreamedMessages(messageAccumulator.getMessages());
-      }
-    };
-
-    const replayHistory = async (): Promise<number> => {
-      const historyResponse = await fetch(`${apiUrl}/acp/history`, {
-        headers: { "X-Lab-Session-Id": labSessionId },
-        signal,
-      });
-
-      if (!historyResponse.ok) {
-        return 0;
+        return;
       }
 
-      const events: { sequence: number; eventData: unknown }[] =
-        await historyResponse.json();
-
-      for (const event of events) {
-        const eventData = getRecord(event.eventData);
-        if (!eventData) {
-          continue;
-        }
-
-        const translated = translateAcpEvent(eventData, event.sequence);
-        for (const translatedEvent of translated) {
-          messageAccumulator.processEvent(translatedEvent);
-        }
+      const parts = normalizeContentParts(extractContentParts(item));
+      const textPart = parts.find((part) => part.type === "text");
+      const text = textPart?.type === "text" ? textPart.text : "";
+      if (!text) {
+        return;
       }
 
-      if (events.length > 0) {
-        setStreamedMessages(messageAccumulator.getMessages());
+      const pendingIds = pendingOptimisticByTextRef.current.get(text);
+      if (!pendingIds || pendingIds.length === 0) {
+        return;
       }
 
-      return events.reduce(
-        (highestSequence, event) => Math.max(highestSequence, event.sequence),
-        0
+      const [resolvedId, ...rest] = pendingIds;
+      if (rest.length > 0) {
+        pendingOptimisticByTextRef.current.set(text, rest);
+      } else {
+        pendingOptimisticByTextRef.current.delete(text);
+      }
+
+      mutate(
+        messagesKey,
+        (
+          current: SessionData | null | undefined
+        ): SessionData | null | undefined => {
+          if (!(current && resolvedId)) {
+            return current;
+          }
+
+          return {
+            ...current,
+            messages: current.messages.filter(
+              (message) => message.id !== resolvedId
+            ),
+          };
+        },
+        { revalidate: false }
       );
     };
 
-    const streamLiveEvents = async (lastSequence: number) => {
-      const params = new URLSearchParams({ sessionId: labSessionId });
-      if (lastSequence > 0) {
-        params.set("offset", String(lastSequence));
-      }
-      const eventsUrl = `${apiUrl}/acp/events?${params}`;
+    messageAccumulator.processEvent(event);
+    handleUserMessageAcknowledged(event);
 
-      while (!signal.aborted) {
-        try {
-          const response = await fetch(eventsUrl, {
-            headers: {
-              Accept: "text/event-stream",
-              "X-Lab-Session-Id": labSessionId,
-            },
-            signal,
-          });
+    switch (event.type) {
+      case "turn.started":
+        setSessionStatus({ type: "busy" });
+        break;
+      case "turn.ended":
+        handleTurnEnded();
+        persistReplayCheckpoint();
+        break;
+      case "error":
+        handleError(event);
+        break;
+      case "question.requested":
+        handleQuestionRequested(event);
+        break;
+      case "question.resolved":
+        handleQuestionResolved(event);
+        break;
+      default:
+        break;
+    }
 
-          if (!(response.ok && response.body)) {
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-            continue;
+    if (
+      event.type === "item.started" ||
+      event.type === "item.delta" ||
+      event.type === "item.completed"
+    ) {
+      setMessagesFromAccumulator();
+    }
+  };
+
+  useEffect(() => {
+    if (isOptimistic) {
+      return;
+    }
+
+    const ordered = [...acpEventsSnapshot.events].sort(
+      (left, right) => left.sequence - right.sequence
+    );
+    const checkpointVersion = acpEventsSnapshot.checkpoint
+      ? `${acpEventsSnapshot.checkpoint.parserVersion}:${acpEventsSnapshot.checkpoint.lastSequence}`
+      : "none";
+    const firstSequence = ordered[0]?.sequence ?? -1;
+    const lastSequence = ordered.at(-1)?.sequence ?? -1;
+    const replayVersion = `${checkpointVersion}:${ordered.length}:${firstSequence}:${lastSequence}`;
+    if (lastReplayVersionRef.current === replayVersion) {
+      return;
+    }
+    lastReplayVersionRef.current = replayVersion;
+
+    const translator = createAcpEventTranslator();
+    translatorRef.current = translator;
+    const messageAccumulator = new MessageAccumulator();
+    accumulatorRef.current = messageAccumulator;
+    let replayQuestionRequests = new Map<string, string>();
+
+    if (
+      acpEventsSnapshot.checkpoint &&
+      acpEventsSnapshot.checkpoint.parserVersion === REPLAY_PARSER_VERSION
+    ) {
+      const checkpointState = acpEventsSnapshot.checkpoint.replayState;
+      translator.setState(checkpointState.translator);
+      messageAccumulator.setState(checkpointState.accumulator);
+      replayQuestionRequests = new Map(checkpointState.questionRequests);
+      lastProcessedSequenceRef.current =
+        acpEventsSnapshot.checkpoint.lastSequence;
+    } else {
+      lastProcessedSequenceRef.current = -1;
+    }
+
+    for (const entry of ordered) {
+      const translated = translator.translate(entry.envelope, entry.sequence);
+      lastProcessedSequenceRef.current = Math.max(
+        lastProcessedSequenceRef.current,
+        entry.sequence
+      );
+      for (const translatedEvent of translated) {
+        messageAccumulator.processEvent(translatedEvent);
+        if (translatedEvent.type === "question.requested") {
+          const questionId = getString(translatedEvent.data.id) || null;
+          const callId = getString(translatedEvent.data.call_id) || null;
+          if (questionId && callId) {
+            replayQuestionRequests.set(callId, questionId);
           }
-
-          await readSSEStream(response, processEvent);
-        } catch (error) {
-          if (signal.aborted) {
-            return;
+        } else if (translatedEvent.type === "question.resolved") {
+          const callId = getString(translatedEvent.data.call_id) || null;
+          if (callId) {
+            replayQuestionRequests.delete(callId);
           }
-          console.warn("SSE connection error, reconnecting:", error);
-          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       }
-    };
+    }
 
-    const resolveLastSequence = async (): Promise<number> =>
-      replayHistory().catch(() => 0);
+    const pendingIds = new Set(
+      [...pendingOptimisticByTextRef.current.values()].flat()
+    );
+    const replayMessages = messageAccumulator.getMessages();
 
-    const connect = async () => {
-      const lastSequence = await resolveLastSequence();
-      if (signal.aborted) {
-        return;
+    setQuestionRequests(replayQuestionRequests);
+    mutate(
+      messagesKey,
+      (current: SessionData | null | undefined): SessionData => ({
+        sandboxSessionId: current?.sandboxSessionId ?? sandboxSessionId ?? "",
+        messages: [
+          ...replayMessages,
+          ...(current?.messages.filter((message) =>
+            pendingIds.has(message.id)
+          ) ?? []),
+        ],
+      }),
+      { revalidate: false }
+    );
+
+    if (ordered.length > 0) {
+      persistReplayCheckpoint();
+    }
+  }, [acpEventsSnapshot, isOptimistic]);
+
+  useChannelEvent(
+    "sessionAcpEvents",
+    (entry) => {
+      const translated = translatorRef.current.translate(
+        entry.envelope,
+        entry.sequence
+      );
+      for (const translatedEvent of translated) {
+        handleTranslatedEvent(translatedEvent);
       }
-      await streamLiveEvents(lastSequence);
-    };
-
-    connect();
-
-    return () => {
-      abortController.abort();
-    };
-  }, [sandboxSessionId, labSessionId, mutate, publish]);
+    },
+    { uuid: labSessionId },
+    { enabled: Boolean(labSessionId && !isOptimistic) }
+  );
 
   const sendMessage = async ({ content, modelId }: SendMessageOptions) => {
     setError(null);
     setIsSending(true);
+    const optimisticMessage = createOptimisticUserMessage(content);
+    const existingIds = pendingOptimisticByTextRef.current.get(content) ?? [];
+    pendingOptimisticByTextRef.current.set(content, [
+      ...existingIds,
+      optimisticMessage.id,
+    ]);
+
+    mutate(
+      messagesKey,
+      (current: SessionData | null | undefined): SessionData => ({
+        sandboxSessionId: current?.sandboxSessionId ?? "",
+        messages: [...(current?.messages ?? []), optimisticMessage],
+      }),
+      { revalidate: false }
+    );
 
     if (sendingTimeoutRef.current) {
       clearTimeout(sendingTimeoutRef.current);
@@ -709,16 +854,38 @@ export function useAgent(labSessionId: string): UseAgentResult {
         throw new Error(`Failed to send message: ${response.status}`);
       }
     } catch (error) {
+      const pendingIds = pendingOptimisticByTextRef.current.get(content) ?? [];
+      const nextPendingIds = pendingIds.filter(
+        (id) => id !== optimisticMessage.id
+      );
+      if (nextPendingIds.length > 0) {
+        pendingOptimisticByTextRef.current.set(content, nextPendingIds);
+      } else {
+        pendingOptimisticByTextRef.current.delete(content);
+      }
+
+      mutate(
+        messagesKey,
+        (
+          current: SessionData | null | undefined
+        ): SessionData | null | undefined => {
+          if (!current) {
+            return current;
+          }
+          return {
+            ...current,
+            messages: current.messages.filter(
+              (message) => message.id !== optimisticMessage.id
+            ),
+          };
+        },
+        { revalidate: false }
+      );
       const errorInstance =
         error instanceof Error ? error : new Error("Failed to send message");
       setError(errorInstance);
       setIsSending(false);
       throw errorInstance;
-    } finally {
-      if (sendingTimeoutRef.current) {
-        clearTimeout(sendingTimeoutRef.current);
-        sendingTimeoutRef.current = null;
-      }
     }
   };
 

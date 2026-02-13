@@ -1,0 +1,1 @@
+export const CURRENT_REPLAY_PARSER_VERSION = 1;

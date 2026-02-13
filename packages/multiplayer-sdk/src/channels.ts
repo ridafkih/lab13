@@ -200,6 +200,30 @@ export const schema = defineSchema({
       }),
     }),
 
+    sessionAcpEvents: defineChannel({
+      path: "session/:uuid/acp-events",
+      snapshot: z.object({
+        checkpoint: z
+          .object({
+            parserVersion: z.number(),
+            lastSequence: z.number(),
+            replayState: z.record(z.string(), z.unknown()),
+          })
+          .nullable(),
+        events: z.array(
+          z.object({
+            sequence: z.number(),
+            envelope: z.record(z.string(), z.unknown()),
+          })
+        ),
+      }),
+      default: { checkpoint: null, events: [] },
+      event: z.object({
+        sequence: z.number(),
+        envelope: z.record(z.string(), z.unknown()),
+      }),
+    }),
+
     sessionBrowserState: defineChannel({
       path: "session/:uuid/browser-state",
       snapshot: z.object({

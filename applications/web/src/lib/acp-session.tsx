@@ -41,77 +41,8 @@ export function parseSseMessage(message: EventSourceMessage): AcpEvent[] {
   }
 }
 
-let activeItemId: string | null = null;
-let turnCounter = 0;
-const emittedToolCallIds = new Set<string>();
-
-export function resetTranslationState() {
-  activeItemId = null;
-  turnCounter = 0;
-  emittedToolCallIds.clear();
-}
-
 function makeAssistantItem(itemId: string) {
   return { item_id: itemId, kind: "message", role: "assistant", content: [] };
-}
-
-function finishTurn(sequence: number): AcpEvent[] {
-  const events: AcpEvent[] = [];
-  if (activeItemId) {
-    events.push({
-      type: "item.completed",
-      sequence,
-      data: { item: makeAssistantItem(activeItemId) },
-    });
-    activeItemId = null;
-  }
-  events.push({ type: "turn.ended", sequence, data: {} });
-  return events;
-}
-
-function startNewMessage(sequence: number): AcpEvent[] {
-  turnCounter++;
-  const itemId = `msg-${turnCounter}`;
-  activeItemId = itemId;
-
-  return [
-    { type: "turn.started", sequence, data: {} },
-    {
-      type: "item.started",
-      sequence,
-      data: { item: makeAssistantItem(itemId) },
-    },
-  ];
-}
-
-function appendTextDelta(sequence: number, text: string): AcpEvent[] {
-  if (!activeItemId) {
-    return [];
-  }
-  return [
-    {
-      type: "item.delta",
-      sequence,
-      data: { item_id: activeItemId, delta: text },
-    },
-  ];
-}
-
-function handleMessageChunk(
-  content: { text: string; type: string },
-  sequence: number
-): AcpEvent[] {
-  if (!activeItemId) {
-    const events = startNewMessage(sequence);
-    if (content.text) {
-      events.push(...appendTextDelta(sequence, content.text));
-    }
-    return events;
-  }
-  if (content.text) {
-    return appendTextDelta(sequence, content.text);
-  }
-  return [];
 }
 
 function toRecord(value: unknown): Record<string, unknown> | null {
@@ -141,60 +72,19 @@ function extractMeta(update: Record<string, unknown>): Record<string, unknown> {
   return toRecord(meta.claudeCode) ?? {};
 }
 
-function handleToolCallEvent(
-  update: Record<string, unknown>,
-  sequence: number
-): AcpEvent[] {
-  const toolCallId =
-    typeof update.toolCallId === "string" ? update.toolCallId : "";
-  if (!toolCallId) {
-    return [];
-  }
-
-  const rawInput = toRecord(update.rawInput);
-  if (!rawInput || Object.keys(rawInput).length === 0) {
-    return [];
-  }
-  if (emittedToolCallIds.has(toolCallId)) {
-    return [];
-  }
-  emittedToolCallIds.add(toolCallId);
-
-  const claudeCode = extractMeta(update);
-  const toolName =
-    typeof claudeCode.toolName === "string" ? claudeCode.toolName : "";
-
-  const events: AcpEvent[] = [];
-
-  if (activeItemId) {
-    events.push({
-      type: "item.completed",
-      sequence,
-      data: { item: makeAssistantItem(activeItemId) },
-    });
-    activeItemId = null;
-  }
-
-  events.push({
-    type: "item.started",
-    sequence,
-    data: {
-      item: {
-        item_id: toolCallId,
-        kind: "tool_call",
-        content: [
-          {
-            type: "tool_call",
-            call_id: toolCallId,
-            name: toolName,
-            arguments: JSON.stringify(rawInput),
-          },
-        ],
-      },
-    },
-  });
-
-  return events;
+interface AcpEventTranslator {
+  reset: () => void;
+  translate: (parsed: Record<string, unknown>, sequence: number) => AcpEvent[];
+  getState: () => {
+    activeItemId: string | null;
+    turnCounter: number;
+    emittedToolCallIds: string[];
+  };
+  setState: (state: {
+    activeItemId: string | null;
+    turnCounter: number;
+    emittedToolCallIds: string[];
+  }) => void;
 }
 
 function handleToolCallUpdateEvent(
@@ -340,42 +230,204 @@ export function translateAcpEvent(
   parsed: Record<string, unknown>,
   sequence: number
 ): AcpEvent[] {
-  const result = toRecord(parsed.result);
-  if (result?.stopReason) {
-    return finishTurn(sequence);
-  }
-  if (result) {
-    return [];
-  }
+  return defaultAcpEventTranslator.translate(parsed, sequence);
+}
 
-  const update = extractSessionUpdate(parsed);
-  if (!update) {
-    return [];
-  }
+export function createAcpEventTranslator(): AcpEventTranslator {
+  let activeItemId: string | null = null;
+  let turnCounter = 0;
+  const emittedToolCallIds = new Set<string>();
 
-  if (update.sessionUpdate === "agent_message_chunk") {
-    const content = toRecord(update.content);
-    if (!content) {
+  const reset = () => {
+    activeItemId = null;
+    turnCounter = 0;
+    emittedToolCallIds.clear();
+  };
+
+  const getState = () => ({
+    activeItemId,
+    turnCounter,
+    emittedToolCallIds: [...emittedToolCallIds],
+  });
+
+  const setState = (state: {
+    activeItemId: string | null;
+    turnCounter: number;
+    emittedToolCallIds: string[];
+  }) => {
+    activeItemId =
+      typeof state.activeItemId === "string" ? state.activeItemId : null;
+    turnCounter = Number.isFinite(state.turnCounter) ? state.turnCounter : 0;
+    emittedToolCallIds.clear();
+    for (const id of state.emittedToolCallIds) {
+      emittedToolCallIds.add(id);
+    }
+  };
+
+  const finishTurn = (sequence: number): AcpEvent[] => {
+    const events: AcpEvent[] = [];
+    if (activeItemId) {
+      events.push({
+        type: "item.completed",
+        sequence,
+        data: { item: makeAssistantItem(activeItemId) },
+      });
+      activeItemId = null;
+    }
+    events.push({ type: "turn.ended", sequence, data: {} });
+    return events;
+  };
+
+  const startNewMessage = (sequence: number): AcpEvent[] => {
+    turnCounter++;
+    const itemId = `msg-${turnCounter}`;
+    activeItemId = itemId;
+
+    return [
+      { type: "turn.started", sequence, data: {} },
+      {
+        type: "item.started",
+        sequence,
+        data: { item: makeAssistantItem(itemId) },
+      },
+    ];
+  };
+
+  const appendTextDelta = (sequence: number, text: string): AcpEvent[] => {
+    if (!activeItemId) {
       return [];
     }
-    const text = typeof content.text === "string" ? content.text : "";
-    const type = typeof content.type === "string" ? content.type : "text";
-    return handleMessageChunk({ text, type }, sequence);
-  }
+    return [
+      {
+        type: "item.delta",
+        sequence,
+        data: { item_id: activeItemId, delta: text },
+      },
+    ];
+  };
 
-  if (update.sessionUpdate === "tool_call") {
-    return handleToolCallEvent(update, sequence);
-  }
+  const handleMessageChunk = (
+    content: { text: string; type: string },
+    sequence: number
+  ): AcpEvent[] => {
+    if (!activeItemId) {
+      const events = startNewMessage(sequence);
+      if (content.text) {
+        events.push(...appendTextDelta(sequence, content.text));
+      }
+      return events;
+    }
+    if (content.text) {
+      return appendTextDelta(sequence, content.text);
+    }
+    return [];
+  };
 
-  if (update.sessionUpdate === "tool_call_update") {
-    return handleToolCallUpdateEvent(update, sequence);
-  }
+  const handleToolCallEvent = (
+    update: Record<string, unknown>,
+    sequence: number
+  ): AcpEvent[] => {
+    const toolCallId =
+      typeof update.toolCallId === "string" ? update.toolCallId : "";
+    if (!toolCallId) {
+      return [];
+    }
 
-  if (update.sessionUpdate === "user_message") {
-    return handleUserMessageEvent(update, sequence);
-  }
+    const rawInput = toRecord(update.rawInput);
+    if (!rawInput || Object.keys(rawInput).length === 0) {
+      return [];
+    }
+    if (emittedToolCallIds.has(toolCallId)) {
+      return [];
+    }
+    emittedToolCallIds.add(toolCallId);
 
-  return [];
+    const claudeCode = extractMeta(update);
+    const toolName =
+      typeof claudeCode.toolName === "string" ? claudeCode.toolName : "";
+
+    const events: AcpEvent[] = [];
+
+    if (activeItemId) {
+      events.push({
+        type: "item.completed",
+        sequence,
+        data: { item: makeAssistantItem(activeItemId) },
+      });
+      activeItemId = null;
+    }
+
+    events.push({
+      type: "item.started",
+      sequence,
+      data: {
+        item: {
+          item_id: toolCallId,
+          kind: "tool_call",
+          content: [
+            {
+              type: "tool_call",
+              call_id: toolCallId,
+              name: toolName,
+              arguments: JSON.stringify(rawInput),
+            },
+          ],
+        },
+      },
+    });
+
+    return events;
+  };
+
+  const translate = (
+    parsed: Record<string, unknown>,
+    sequence: number
+  ): AcpEvent[] => {
+    const result = toRecord(parsed.result);
+    if (result?.stopReason) {
+      return finishTurn(sequence);
+    }
+    if (result) {
+      return [];
+    }
+
+    const update = extractSessionUpdate(parsed);
+    if (!update) {
+      return [];
+    }
+
+    if (update.sessionUpdate === "agent_message_chunk") {
+      const content = toRecord(update.content);
+      if (!content) {
+        return [];
+      }
+      const text = typeof content.text === "string" ? content.text : "";
+      const type = typeof content.type === "string" ? content.type : "text";
+      return handleMessageChunk({ text, type }, sequence);
+    }
+
+    if (update.sessionUpdate === "tool_call") {
+      return handleToolCallEvent(update, sequence);
+    }
+
+    if (update.sessionUpdate === "tool_call_update") {
+      return handleToolCallUpdateEvent(update, sequence);
+    }
+
+    if (update.sessionUpdate === "user_message") {
+      return handleUserMessageEvent(update, sequence);
+    }
+
+    return [];
+  };
+
+  return { reset, translate, getState, setState };
+}
+
+const defaultAcpEventTranslator = createAcpEventTranslator();
+
+export function resetTranslationState() {
+  defaultAcpEventTranslator.reset();
 }
 
 export function AcpSessionProvider({
@@ -421,10 +473,21 @@ export function useAcpSession() {
 export function createAcpEventParser(
   onEvent: (event: AcpEvent) => void
 ): ReturnType<typeof createParser> {
+  const translator = createAcpEventTranslator();
   return createParser({
     onEvent: (message) => {
-      for (const event of parseSseMessage(message)) {
-        onEvent(event);
+      if (!message.data) {
+        return;
+      }
+      try {
+        const parsed = JSON.parse(message.data);
+        const sequence = message.id ? Number(message.id) : 0;
+        const translated = translator.translate(parsed, sequence);
+        for (const event of translated) {
+          onEvent(event);
+        }
+      } catch {
+        return;
       }
     },
   });

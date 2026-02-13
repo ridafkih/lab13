@@ -2,10 +2,10 @@ import type { Session } from "@lab/database/schema/sessions";
 import { buildSseResponse, CORS_HEADERS } from "@lab/http-utilities";
 import type { NewSessionRequest } from "acp-http-client";
 import { widelog } from "../logging";
+import { upsertReplayCheckpoint } from "../repositories/acp-replay-checkpoint.repository";
 import {
   getAgentEvents,
   getMaxSequence,
-  storeAgentEvent,
 } from "../repositories/agent-event.repository";
 import { getWorkspaceContainerRuntimeId } from "../repositories/container-session.repository";
 import { getProjectSystemPrompt } from "../repositories/project.repository";
@@ -13,21 +13,15 @@ import {
   findSessionById,
   updateSessionFields,
 } from "../repositories/session.repository";
-import {
-  findSessionTasks,
-  replaceSessionTasks,
-  upsertSessionTasks,
-} from "../repositories/session-task.repository";
 import { resolveWorkspacePathBySession } from "../shared/path-resolver";
-import type { SessionStateStore } from "../state/session-state-store";
+import {
+  INFERENCE_STATUS,
+  type SessionStateStore,
+} from "../state/session-state-store";
 import type { Publisher, Sandbox } from "../types/dependencies";
 import type { PromptService } from "../types/prompt";
 import type { AcpClient } from "./client";
-import {
-  extractTodoEvent,
-  mapToReplaceTaskRows,
-  mapToUpsertTaskRows,
-} from "./todo-tracker";
+import { CURRENT_REPLAY_PARSER_VERSION } from "./replay-checkpoint";
 
 type AcpProxyHandler = (request: Request, url: URL) => Promise<Response>;
 
@@ -37,6 +31,7 @@ interface AcpProxyDeps {
   sandbox: Sandbox;
   promptService: PromptService;
   sessionStateStore: SessionStateStore;
+  ensureSessionMonitor?: (sessionId: string) => void;
   mcpUrl?: string;
 }
 
@@ -147,8 +142,15 @@ function buildMcpServers(
 }
 
 export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
-  const { acp, publisher, sandbox, promptService, sessionStateStore, mcpUrl } =
-    deps;
+  const {
+    acp,
+    publisher,
+    sandbox,
+    promptService,
+    sessionStateStore,
+    ensureSessionMonitor,
+    mcpUrl,
+  } = deps;
 
   function requireLabSessionId(id: string | null): ValidationResult<string> {
     if (!id) {
@@ -301,6 +303,10 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
     ["GET /files/list", routeWithSessionAndUrl(handleFileList)],
     ["GET /files/read", routeWithSessionAndUrl(handleFileRead)],
     ["GET /history", routeWithSession(handleHistory)],
+    [
+      "POST /replay-checkpoint",
+      (request, labSessionId) => handleReplayCheckpoint(request, labSessionId),
+    ],
     ["GET /agents", () => handleListAgents()],
     ["GET /models", () => handleListModels()],
   ]);
@@ -439,6 +445,17 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
     }
 
     try {
+      ensureSessionMonitor?.(validated.value);
+      await sessionStateStore.setInferenceStatus(
+        validated.value,
+        INFERENCE_STATUS.GENERATING
+      );
+      publisher.publishDelta(
+        "sessionMetadata",
+        { uuid: validated.value },
+        { inferenceStatus: INFERENCE_STATUS.GENERATING }
+      );
+
       await sendMessageWithRecovery(
         validated.value,
         initialSession,
@@ -454,6 +471,16 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
 
       return corsResponse(JSON.stringify({ success: true }), 200);
     } catch (error) {
+      await sessionStateStore.setInferenceStatus(
+        validated.value,
+        INFERENCE_STATUS.IDLE
+      );
+      publisher.publishDelta(
+        "sessionMetadata",
+        { uuid: validated.value },
+        { inferenceStatus: INFERENCE_STATUS.IDLE }
+      );
+
       const message = error instanceof Error ? error.message : "Unknown error";
       return corsResponse(
         JSON.stringify({ error: `Failed to send message: ${message}` }),
@@ -497,8 +524,6 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
                 throw error;
               }
             }
-
-            persistAndBroadcastEvent(currentLabSessionId, seq, envelope);
           }
         );
 
@@ -517,40 +542,6 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
     });
 
     return buildSseResponse(stream, 200);
-  }
-
-  async function persistAndBroadcastEvent(
-    sessionId: string,
-    sequence: number,
-    envelope: unknown
-  ): Promise<void> {
-    try {
-      await storeAgentEvent(sessionId, sequence, envelope);
-
-      const parsedTodoEvent = extractTodoEvent(envelope);
-      if (!parsedTodoEvent) {
-        return;
-      }
-
-      if (parsedTodoEvent.mode === "replace") {
-        const taskRows = mapToReplaceTaskRows(parsedTodoEvent);
-        await replaceSessionTasks(sessionId, taskRows);
-      } else {
-        const taskRows = mapToUpsertTaskRows(parsedTodoEvent);
-        await upsertSessionTasks(sessionId, taskRows);
-      }
-
-      const snapshot = await findSessionTasks(sessionId);
-      publisher.publishSnapshot("sessionTasks", { uuid: sessionId }, snapshot);
-    } catch (error) {
-      widelog.context(() => {
-        widelog.set("event_name", "acp.event_persist_failed");
-        widelog.set("session_id", sessionId);
-        widelog.set("outcome", "error");
-        widelog.errorFields(error);
-        widelog.flush();
-      });
-    }
   }
 
   async function handleCancelSession(
@@ -819,6 +810,47 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
         500
       );
     }
+  }
+
+  async function handleReplayCheckpoint(
+    request: Request,
+    labSessionId: string | null
+  ): Promise<Response> {
+    const validated = requireLabSessionId(labSessionId);
+    if (!validated.ok) {
+      return validated.response;
+    }
+
+    const body = await safeJsonBody(request);
+    const parserVersion =
+      typeof body.parserVersion === "number" ? body.parserVersion : null;
+    const lastSequence =
+      typeof body.lastSequence === "number" ? body.lastSequence : null;
+    const replayState = isEventRecord(body.replayState)
+      ? body.replayState
+      : null;
+
+    if (parserVersion === null || lastSequence === null || !replayState) {
+      return corsResponse(
+        JSON.stringify({ error: "Invalid replay checkpoint payload" }),
+        400
+      );
+    }
+
+    if (parserVersion !== CURRENT_REPLAY_PARSER_VERSION) {
+      return corsResponse(
+        JSON.stringify({ error: "Unsupported replay parser version" }),
+        400
+      );
+    }
+
+    await upsertReplayCheckpoint(validated.value, {
+      parserVersion,
+      lastSequence,
+      replayState,
+    });
+
+    return corsResponse(JSON.stringify({ success: true }), 200);
   }
 
   async function handleListModels(): Promise<Response> {

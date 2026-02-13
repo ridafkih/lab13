@@ -10,6 +10,7 @@ import type { LogMonitor } from "../monitors/log.monitor";
 import { ValidationError } from "../shared/errors";
 import {
   loadProjects,
+  loadSessionAcpEvents,
   loadSessionChangedFiles,
   loadSessionContainers,
   loadSessionLogs,
@@ -103,6 +104,14 @@ export function createWebSocketHandlers(deps: WebSocketHandlerDeps) {
     },
     sessionMessages: {
       getSnapshot: () => Promise.resolve([]),
+    },
+    sessionAcpEvents: {
+      getSnapshot: ({ params }) => {
+        if (!params.uuid) {
+          throw new ValidationError("Missing uuid parameter");
+        }
+        return loadSessionAcpEvents(params.uuid);
+      },
     },
     sessionBrowserState: {
       getSnapshot: ({ params }) => {

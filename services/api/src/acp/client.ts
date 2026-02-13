@@ -19,39 +19,41 @@ interface CreateSessionOptions {
   loadSessionId?: string;
 }
 
+const PROMPT_STARTUP_WAIT_MS = 1500;
+
 const LAB_TOOL_ALLOWLIST = [
-  "mcp__lab__bash",
-  "mcp__lab__browser",
-  "mcp__lab__containers",
-  "mcp__lab__logs",
-  "mcp__lab__restart_process",
-  "mcp__lab__internal_url",
-  "mcp__lab__public_url",
+  "mcp__lab__Bash",
+  "mcp__lab__Browser",
+  "mcp__lab__Containers",
+  "mcp__lab__Logs",
+  "mcp__lab__RestartProcess",
+  "mcp__lab__InternalUrl",
+  "mcp__lab__PublicUrl",
   "mcp__lab__Read",
   "mcp__lab__Write",
   "mcp__lab__Patch",
   "mcp__lab__Edit",
   "mcp__lab__Grep",
   "mcp__lab__Glob",
-  "mcp__lab__gh",
+  "mcp__lab__GitHub",
   "mcp__lab__WebFetch",
   "mcp__lab__TodoWrite",
   "mcp__lab__TaskCreate",
   "mcp__lab__TaskUpdate",
-  "bash",
-  "browser",
-  "containers",
-  "logs",
-  "restart_process",
-  "internal_url",
-  "public_url",
+  "Bash",
+  "Browser",
+  "Containers",
+  "Logs",
+  "RestartProcess",
+  "InternalUrl",
+  "PublicUrl",
   "Read",
   "Write",
   "Patch",
   "Edit",
   "Grep",
   "Glob",
-  "gh",
+  "GitHub",
   "WebFetch",
   "TodoWrite",
   "TaskCreate",
@@ -259,8 +261,27 @@ export class AgentSessionManager {
         this.inFlightPrompts.delete(serverId);
       });
 
-    this.inFlightPrompts.set(serverId, pendingPrompt);
-    return Promise.resolve();
+    this.inFlightPrompts.set(
+      serverId,
+      pendingPrompt.catch(() => undefined)
+    );
+    return this.awaitPromptStart(pendingPrompt);
+  }
+
+  private async awaitPromptStart(pendingPrompt: Promise<void>): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        pendingPrompt,
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, PROMPT_STARTUP_WAIT_MS);
+        }),
+      ]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
   }
 
   async cancelPrompt(serverId: string): Promise<void> {

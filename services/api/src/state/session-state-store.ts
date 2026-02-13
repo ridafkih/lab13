@@ -1,4 +1,6 @@
-import type { RedisClient } from "bun";
+import { db } from "@lab/database/client";
+import { eq } from "drizzle-orm";
+import { sessionMetadata } from "../../../../packages/database/src/schema/session-metadata";
 
 export const INFERENCE_STATUS = {
   IDLE: "idle",
@@ -13,19 +15,12 @@ interface SessionState {
   lastMessage?: string;
 }
 
-const KEY_PREFIX = "session:state";
-
 export class SessionStateStore {
-  private readonly redis: RedisClient;
-
-  constructor(redis: RedisClient) {
-    this.redis = redis;
-  }
+  constructor() {}
 
   async getInferenceStatus(sessionId: string): Promise<InferenceStatus> {
-    const value = await this.redis.get(
-      `${KEY_PREFIX}:${sessionId}:inferenceStatus`
-    );
+    const row = await this.getRow(sessionId);
+    const value = row?.inferenceStatus;
     if (value === INFERENCE_STATUS.GENERATING) {
       return INFERENCE_STATUS.GENERATING;
     }
@@ -36,21 +31,45 @@ export class SessionStateStore {
     sessionId: string,
     status: InferenceStatus
   ): Promise<void> {
-    await this.redis.set(`${KEY_PREFIX}:${sessionId}:inferenceStatus`, status);
+    await db
+      .insert(sessionMetadata)
+      .values({
+        sessionId,
+        inferenceStatus: status,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: sessionMetadata.sessionId,
+        set: {
+          inferenceStatus: status,
+          updatedAt: new Date(),
+        },
+      });
   }
 
   async getLastMessage(sessionId: string): Promise<string | undefined> {
-    const value = await this.redis.get(
-      `${KEY_PREFIX}:${sessionId}:lastMessage`
-    );
-    return value ?? undefined;
+    const row = await this.getRow(sessionId);
+    return row?.lastMessage ?? undefined;
   }
 
   async setLastMessage(sessionId: string, message: string): Promise<void> {
     if (!message) {
       return;
     }
-    await this.redis.set(`${KEY_PREFIX}:${sessionId}:lastMessage`, message);
+    await db
+      .insert(sessionMetadata)
+      .values({
+        sessionId,
+        lastMessage: message,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: sessionMetadata.sessionId,
+        set: {
+          lastMessage: message,
+          updatedAt: new Date(),
+        },
+      });
   }
 
   async getState(sessionId: string): Promise<SessionState> {
@@ -62,9 +81,23 @@ export class SessionStateStore {
   }
 
   async clear(sessionId: string): Promise<void> {
-    await Promise.all([
-      this.redis.del(`${KEY_PREFIX}:${sessionId}:inferenceStatus`),
-      this.redis.del(`${KEY_PREFIX}:${sessionId}:lastMessage`),
-    ]);
+    await db
+      .delete(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, sessionId));
+  }
+
+  private async getRow(sessionId: string): Promise<{
+    inferenceStatus: string;
+    lastMessage: string | null;
+  } | null> {
+    const [row] = await db
+      .select({
+        inferenceStatus: sessionMetadata.inferenceStatus,
+        lastMessage: sessionMetadata.lastMessage,
+      })
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, sessionId))
+      .limit(1);
+    return row ?? null;
   }
 }

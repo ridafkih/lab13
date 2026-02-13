@@ -77,7 +77,7 @@ function findBlockedCommand(command: string): BlockedCommand | null {
 
 export function bash(server: McpServer, { docker, config }: ToolContext) {
   server.registerTool(
-    "bash",
+    "Bash",
     {
       description:
         "Execute a bash command in the session's workspace container. Use this tool to run shell commands, install packages, build projects, or interact with the filesystem. Note: For GitHub operations, use the github_* tools (e.g., github_create_pull_request).",

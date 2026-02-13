@@ -43,6 +43,7 @@ const POST: Handler<OrchestrationContext> = async ({ request, context }) => {
       acp: context.acp,
       publisher: context.publisher,
       sessionStateStore: context.sessionStateStore,
+      sessionLifecycle: context.sessionLifecycle,
     });
   }
 

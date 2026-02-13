@@ -6,7 +6,10 @@ import {
 } from "../repositories/session.repository";
 import { ExternalServiceError } from "../shared/errors";
 import { resolveWorkspacePathBySession } from "../shared/path-resolver";
-import type { SessionStateStore } from "../state/session-state-store";
+import {
+  INFERENCE_STATUS,
+  type SessionStateStore,
+} from "../state/session-state-store";
 import type { Publisher } from "../types/dependencies";
 
 interface SendMessageOptions {
@@ -127,6 +130,16 @@ export async function sendMessageToSession(
     );
   }
 
+  await sessionStateStore.setInferenceStatus(
+    sessionId,
+    INFERENCE_STATUS.GENERATING
+  );
+  publisher.publishDelta(
+    "sessionMetadata",
+    { uuid: sessionId },
+    { inferenceStatus: INFERENCE_STATUS.GENERATING }
+  );
+
   let currentSession = session;
   for (let attemptIndex = 0; attemptIndex < 2; attemptIndex++) {
     try {
@@ -154,6 +167,15 @@ export async function sendMessageToSession(
       const isFinalAttempt = attemptIndex === 1;
 
       if (isFinalAttempt || !isRecoverableSendError(error)) {
+        await sessionStateStore.setInferenceStatus(
+          sessionId,
+          INFERENCE_STATUS.IDLE
+        );
+        publisher.publishDelta(
+          "sessionMetadata",
+          { uuid: sessionId },
+          { inferenceStatus: INFERENCE_STATUS.IDLE }
+        );
         throw asExternalServiceError(error);
       }
 

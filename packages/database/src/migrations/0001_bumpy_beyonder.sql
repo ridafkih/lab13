@@ -1,1 +1,0 @@
-ALTER TABLE "session_containers" ALTER COLUMN "runtime_id" DROP NOT NULL;

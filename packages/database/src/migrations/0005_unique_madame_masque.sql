@@ -1,1 +1,0 @@
-ALTER TABLE "sessions" RENAME COLUMN "opencode_session_id" TO "sandbox_session_id";

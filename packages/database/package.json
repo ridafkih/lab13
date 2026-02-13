@@ -83,9 +83,17 @@
       "types": "./src/schema/agent-events.ts",
       "default": "./src/schema/agent-events.ts"
     },
+    "./schema/acp-replay-checkpoints": {
+      "types": "./src/schema/acp-replay-checkpoints.ts",
+      "default": "./src/schema/acp-replay-checkpoints.ts"
+    },
     "./schema/session-tasks": {
       "types": "./src/schema/session-tasks.ts",
       "default": "./src/schema/session-tasks.ts"
+    },
+    "./schema/session-metadata": {
+      "types": "./src/schema/session-metadata.ts",
+      "default": "./src/schema/session-metadata.ts"
     }
   },
   "scripts": {

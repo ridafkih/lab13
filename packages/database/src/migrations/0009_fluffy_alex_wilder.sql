@@ -1,1 +1,0 @@
-ALTER TABLE "sessions" DROP COLUMN "acp_server_id";

@@ -77,7 +77,7 @@ export const setup = (({ env }) => {
   const acp = createAcpClient(acpUrl);
 
   const redis = new RedisClient(env.REDIS_URL);
-  const sessionStateStore = new SessionStateStore(redis);
+  const sessionStateStore = new SessionStateStore();
   const proxyManager = new ProxyManager(env.PROXY_BASE_URL, redis);
 
   const deferredPublisher = new DeferredPublisher();
@@ -150,6 +150,7 @@ export const setup = (({ env }) => {
       sandbox,
       acp,
       promptService,
+      acpMonitor,
       imageStore,
       widelog,
       sessionStateStore,

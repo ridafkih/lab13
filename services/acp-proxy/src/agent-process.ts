@@ -40,21 +40,24 @@ const SESSION_BOOTSTRAP_TIMEOUT_MS = 30_000;
 const PROMPT_TIMEOUT_MS = 10 * 60_000;
 const SHUTDOWN_GRACE_MS = 5000;
 const ALLOWED_TOOL_NAMES = new Set([
-  "bash",
-  "browser",
-  "containers",
-  "logs",
-  "restart_process",
-  "internal_url",
-  "public_url",
+  "Bash",
+  "Browser",
+  "Containers",
+  "Logs",
+  "RestartProcess",
+  "InternalUrl",
+  "PublicUrl",
   "Read",
   "Write",
   "Patch",
   "Edit",
   "Grep",
   "Glob",
-  "gh",
+  "GitHub",
   "WebFetch",
+  "TodoWrite",
+  "TaskCreate",
+  "TaskUpdate",
 ]);
 
 function isJsonRpcResponse(

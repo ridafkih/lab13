@@ -44,7 +44,13 @@ export function useSessionStatus(session: Session | null): SessionStatus {
   const hasStartingContainer = containers.some(
     (container) => container.status === "starting"
   );
-  if (hasStartingContainer || session.status === "creating") {
+  const hasRunningContainer = containers.some(
+    (container) => container.status === "running"
+  );
+  if (
+    session.status === "creating" ||
+    (hasStartingContainer && !hasRunningContainer)
+  ) {
     return "starting";
   }
 
