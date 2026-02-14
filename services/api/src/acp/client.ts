@@ -138,13 +138,27 @@ function supportsSessionResume(initializeResult: unknown): boolean {
   return Boolean(sessionCapabilities?.resume);
 }
 
+function isAcpTransportTimeoutError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === "TimeoutError") {
+    return true;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("The operation timed out") ||
+    message.includes("TimeoutError")
+  );
+}
+
 export class AgentSessionManager {
   private readonly baseUrl: string;
   private readonly clients = new Map<string, AcpHttpClient>();
   private readonly listeners = new Map<string, Set<EventListener>>();
   private readonly eventBuffers = new Map<string, AnyMessage[]>();
   private readonly sessionIds = new Map<string, string>();
+  private readonly sessionOptions = new Map<string, CreateSessionOptions>();
   private readonly inFlightPrompts = new Map<string, Promise<void>>();
+  private readonly fatalResetsInFlight = new Set<string>();
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
@@ -176,6 +190,17 @@ export class AgentSessionManager {
 
     const clientOptions: AcpHttpClientOptions = {
       baseUrl: this.baseUrl,
+      fetch: (async (...args: Parameters<typeof fetch>) => {
+        const [input, init] = args;
+        try {
+          return await fetch(input, init);
+        } catch (error) {
+          if (isAcpTransportTimeoutError(error)) {
+            await this.handleFatalTransportTimeout(serverId, error);
+          }
+          throw error;
+        }
+      }) as unknown as typeof fetch,
       transport: {
         path: `/v1/acp/${serverId}`,
         bootstrapQuery: { agent: "claude", permissionMode: "bypass" },
@@ -214,6 +239,7 @@ export class AgentSessionManager {
           _meta: sessionInit._meta,
         });
         this.sessionIds.set(serverId, requestedLoadSessionId);
+        this.sessionOptions.set(serverId, { ...options });
         return requestedLoadSessionId;
       } catch {
         // Fall through to load/new fallback chain
@@ -229,6 +255,7 @@ export class AgentSessionManager {
           _meta: sessionInit._meta,
         });
         this.sessionIds.set(serverId, requestedLoadSessionId);
+        this.sessionOptions.set(serverId, { ...options });
         return requestedLoadSessionId;
       } catch {
         // Fall through to creating a new session
@@ -237,6 +264,10 @@ export class AgentSessionManager {
 
     const newSessionResult = await client.newSession(sessionInit);
     this.sessionIds.set(serverId, newSessionResult.sessionId);
+    this.sessionOptions.set(serverId, {
+      ...options,
+      loadSessionId: newSessionResult.sessionId,
+    });
 
     return newSessionResult.sessionId;
   }
@@ -339,6 +370,53 @@ export class AgentSessionManager {
     }
   }
 
+  private async handleFatalTransportTimeout(
+    serverId: string,
+    error: unknown
+  ): Promise<void> {
+    if (this.fatalResetsInFlight.has(serverId)) {
+      return;
+    }
+
+    this.fatalResetsInFlight.add(serverId);
+    try {
+      const message =
+        error instanceof Error ? error.message : "ACP transport timed out";
+
+      this.emitSessionEvent(serverId, {
+        jsonrpc: "2.0",
+        id: null,
+        error: { code: -32_603, message: `ACP transport timeout: ${message}` },
+      });
+
+      const priorSessionId = this.sessionIds.get(serverId);
+      const priorOptions = this.sessionOptions.get(serverId);
+      const client = this.clients.get(serverId);
+      if (client) {
+        await client.disconnect().catch(() => undefined);
+      }
+
+      this.clients.delete(serverId);
+      this.sessionIds.delete(serverId);
+      this.inFlightPrompts.delete(serverId);
+
+      if (priorOptions) {
+        await this.createSession(serverId, {
+          ...priorOptions,
+          loadSessionId: priorSessionId ?? priorOptions.loadSessionId,
+        }).catch(() => undefined);
+      }
+
+      this.emitSessionEvent(serverId, {
+        jsonrpc: "2.0",
+        id: null,
+        result: { stopReason: "end_turn" },
+      });
+    } finally {
+      this.fatalResetsInFlight.delete(serverId);
+    }
+  }
+
   async cancelPrompt(serverId: string): Promise<void> {
     const client = this.clients.get(serverId);
     if (!client) {
@@ -373,6 +451,7 @@ export class AgentSessionManager {
       this.clients.delete(serverId);
       this.listeners.delete(serverId);
       this.sessionIds.delete(serverId);
+      this.sessionOptions.delete(serverId);
     }
   }
 

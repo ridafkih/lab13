@@ -128,10 +128,20 @@ class SessionTracker {
         if (this.stopped) {
           return;
         }
-        this.enqueuePersistence(envelope);
-        const event = envelopeToSandboxEvent(envelope);
-        if (event) {
-          this.processEvent(event);
+        try {
+          this.enqueuePersistence(envelope);
+          const event = envelopeToSandboxEvent(envelope);
+          if (event) {
+            this.processEvent(event);
+          }
+        } catch (error) {
+          widelog.context(() => {
+            widelog.set("event_name", "acp.event_processing_failed");
+            widelog.set("session_id", this.labSessionId);
+            widelog.set("outcome", "error");
+            widelog.errorFields(error);
+            widelog.flush();
+          });
         }
       }
     );
