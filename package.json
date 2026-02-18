@@ -2,13 +2,6 @@
   "name": "lab",
   "license": "AGPL-3.0",
   "private": true,
-  "workspaces": {
-    "packages": [
-      "applications/*",
-      "packages/*",
-      "services/*"
-    ]
-  },
   "type": "module",
   "scripts": {
     "check": "ultracite check",
