@@ -57,13 +57,24 @@ async function withTimeout<T>(
 }
 
 function isRecoverableSendError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes("No session for server") ||
-    message.includes("Process stdin not available") ||
-    message.includes("Request failed with status 500") ||
-    message.includes("timed out")
-  );
+  const message =
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : String(error).toLowerCase();
+
+  const recoverablePatterns = [
+    "request failed with status 500",
+    "agent process exited",
+    "no session for server",
+    "process stdin not available",
+    "timed out",
+    "no conversation found",
+    "session not found",
+    "session did not end in result",
+    "processtransport is not ready for writing",
+  ];
+
+  return recoverablePatterns.some((pattern) => message.includes(pattern));
 }
 
 export async function initiateAgentSession(
@@ -73,12 +84,39 @@ export async function initiateAgentSession(
 
   const existing = await findSessionById(sessionId);
   const modelId = options.modelId ?? getDefaultModelId();
-  const workspacePath =
+  let workspacePath =
     existing?.workspaceDirectory ??
     (await resolveWorkspacePathBySession(sessionId));
 
-  if (existing?.sandboxSessionId && acp.hasSession(sessionId)) {
+  const workspaceReady = await acp
+    .listFsEntries({ path: workspacePath })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!workspaceReady) {
+    const recomputedWorkspacePath =
+      await resolveWorkspacePathBySession(sessionId);
+    if (recomputedWorkspacePath !== workspacePath) {
+      const recomputedReady = await acp
+        .listFsEntries({ path: recomputedWorkspacePath })
+        .then(() => true)
+        .catch(() => false);
+      if (recomputedReady) {
+        workspacePath = recomputedWorkspacePath;
+      }
+    }
+  }
+
+  if (
+    existing?.sandboxSessionId &&
+    acp.hasSession(sessionId) &&
+    workspaceReady
+  ) {
     return existing.sandboxSessionId;
+  }
+
+  if (existing?.sandboxSessionId) {
+    await acp.destroySession(sessionId).catch(() => undefined);
   }
 
   const loadSessionId = existing?.sandboxSessionId ?? undefined;

@@ -1,5 +1,5 @@
 import type { Session } from "@lab/database/schema/sessions";
-import { buildSseResponse, CORS_HEADERS } from "@lab/http-utilities";
+import { buildSseResponse, CORS_HEADERS, withCors } from "@lab/http-utilities";
 import type { NewSessionRequest } from "acp-http-client";
 import { widelog } from "../logging";
 import { upsertReplayCheckpoint } from "../repositories/acp-replay-checkpoint.repository";
@@ -68,6 +68,7 @@ function isRecoverableAcpSendError(error: unknown): boolean {
     "timed out",
     "no conversation found",
     "session not found",
+    "authentication required",
     "session did not end in result",
     "processtransport is not ready for writing",
   ];
@@ -285,6 +286,44 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
     }
   }
 
+  async function setModelWithRecovery(
+    labSessionId: string,
+    session: Session,
+    modelId: string
+  ): Promise<void> {
+    let currentSession = session;
+
+    for (
+      let attemptIndex = 0;
+      attemptIndex < MAX_SEND_MESSAGE_ATTEMPTS;
+      attemptIndex++
+    ) {
+      try {
+        await withTimeout(
+          ensureAcpSession(labSessionId, currentSession),
+          SEND_MESSAGE_TIMEOUT_MS,
+          "ACP session initialization"
+        );
+        await withTimeout(
+          acp.setSessionModel(labSessionId, modelId),
+          SEND_MESSAGE_TIMEOUT_MS,
+          "ACP set session model"
+        );
+        return;
+      } catch (error) {
+        const isFinalAttempt = attemptIndex === MAX_SEND_MESSAGE_ATTEMPTS - 1;
+        if (isFinalAttempt || !isRecoverableAcpSendError(error)) {
+          throw error;
+        }
+
+        currentSession = await resetAcpSessionForRetry(
+          labSessionId,
+          currentSession
+        );
+      }
+    }
+  }
+
   type RouteHandler = (
     request: Request,
     labSessionId: string | null,
@@ -313,7 +352,10 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
       "POST /messages",
       (request, labSessionId) => handleSendMessage(request, labSessionId),
     ],
-    ["POST /model", (request, labSessionId) => handleSetModel(request, labSessionId)],
+    [
+      "POST /model",
+      (request, labSessionId) => handleSetModel(request, labSessionId),
+    ],
     ["POST /cancel", routeWithSession(handleCancelSession)],
     [
       "GET /events",
@@ -330,6 +372,14 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
     ],
     ["GET /agents", () => handleListAgents()],
     ["GET /models", () => handleListModels()],
+    ["POST /claude/auth/start", () => handleStartClaudeAuth()],
+    ["GET /claude/auth/status", () => handleClaudeAuthStatus()],
+    ["GET /claude/auth/events", (request) => handleClaudeAuthEvents(request)],
+    ["POST /claude/auth/logout", () => handleLogoutClaudeAuth()],
+    [
+      "POST /claude/auth/code",
+      (request) => handleSubmitClaudeAuthCode(request),
+    ],
   ]);
 
   function matchStaticRoute(
@@ -369,6 +419,7 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
   return function handleProxy(request: Request, url: URL): Promise<Response> {
     const path = url.pathname.replace(PATH_PREFIX, "");
     const labSessionId = request.headers.get("X-Lab-Session-Id");
+    const origin = request.headers.get("Origin") ?? undefined;
 
     widelog.set("sandbox_agent.proxy_path", path);
     widelog.set("sandbox_agent.has_lab_session_id", Boolean(labSessionId));
@@ -378,16 +429,21 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
 
     const staticHandler = matchStaticRoute(path, request.method);
     if (staticHandler) {
-      return staticHandler(request, labSessionId, url);
+      return staticHandler(request, labSessionId, url).then((response) =>
+        withCors(response, origin)
+      );
     }
 
     const regexResult = handleRegexRoutes(path, request.method, labSessionId);
     if (regexResult) {
-      return regexResult;
+      return regexResult.then((response) => withCors(response, origin));
     }
 
     return Promise.resolve(
-      corsResponse(JSON.stringify({ error: "Not found" }), 404)
+      withCors(
+        corsResponse(JSON.stringify({ error: "Not found" }), 404),
+        origin
+      )
     );
   };
 
@@ -527,20 +583,14 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
     }
 
     const body = await safeJsonBody(request);
-    const model =
-      typeof body.model === "string" ? body.model.trim() : "";
+    const model = typeof body.model === "string" ? body.model.trim() : "";
 
     if (!model) {
       return corsResponse(JSON.stringify({ error: "Missing model" }), 400);
     }
 
     try {
-      await withTimeout(
-        ensureAcpSession(validated.value, session),
-        SEND_MESSAGE_TIMEOUT_MS,
-        "ACP session initialization"
-      );
-      await acp.setSessionModel(validated.value, model);
+      await setModelWithRecovery(validated.value, session, model);
       return corsResponse(JSON.stringify({ success: true, model }), 200);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -645,6 +695,103 @@ export function createAcpProxyHandler(deps: AcpProxyDeps): AcpProxyHandler {
     }
 
     return corsResponse(JSON.stringify({ success: true }), 200);
+  }
+
+  async function handleStartClaudeAuth(): Promise<Response> {
+    try {
+      const status = await acp.startClaudeAuth();
+      return corsResponse(JSON.stringify(status), 200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return corsResponse(
+        JSON.stringify({ error: `Failed to start Claude auth: ${message}` }),
+        500
+      );
+    }
+  }
+
+  async function handleClaudeAuthStatus(): Promise<Response> {
+    try {
+      const status = await acp.getClaudeAuthStatus();
+      return corsResponse(JSON.stringify(status), 200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return corsResponse(
+        JSON.stringify({
+          error: `Failed to fetch Claude auth status: ${message}`,
+        }),
+        500
+      );
+    }
+  }
+
+  async function handleClaudeAuthEvents(request: Request): Promise<Response> {
+    try {
+      const lastEventIdHeader = request.headers.get("Last-Event-ID");
+      const lastEventId = lastEventIdHeader
+        ? Number(lastEventIdHeader)
+        : undefined;
+      const upstream = await acp.streamClaudeAuthEvents(
+        request.signal,
+        lastEventId
+      );
+
+      return new Response(upstream.body, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return corsResponse(
+        JSON.stringify({
+          error: `Failed to stream Claude auth events: ${message}`,
+        }),
+        500
+      );
+    }
+  }
+
+  async function handleLogoutClaudeAuth(): Promise<Response> {
+    try {
+      const status = await acp.logoutClaudeAuth();
+      return corsResponse(JSON.stringify(status), 200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return corsResponse(
+        JSON.stringify({ error: `Failed to logout Claude auth: ${message}` }),
+        500
+      );
+    }
+  }
+
+  async function handleSubmitClaudeAuthCode(
+    request: Request
+  ): Promise<Response> {
+    const body = await safeJsonBody(request);
+    const code = typeof body.code === "string" ? body.code : "";
+    if (!code.trim()) {
+      return corsResponse(
+        JSON.stringify({ error: "Missing authentication code" }),
+        400
+      );
+    }
+
+    try {
+      const status = await acp.submitClaudeAuthCode(code);
+      return corsResponse(JSON.stringify(status), 200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return corsResponse(
+        JSON.stringify({
+          error: `Failed to submit Claude auth code: ${message}`,
+        }),
+        500
+      );
+    }
   }
 
   function handlePermissionReply(): Promise<Response> {

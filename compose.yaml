@@ -45,6 +45,7 @@ services:
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       CLAUDE_CODE_OAUTH_CREDENTIALS: ${CLAUDE_CODE_OAUTH_CREDENTIALS:-}
+      ACP_EVENT_SINK_URL: http://lab-api:4000/internal/acp/events
     ports:
       - "3001:3000"
     healthcheck:

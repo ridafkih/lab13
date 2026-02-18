@@ -19,24 +19,6 @@ const LAB_TOOL_ALLOWLIST = [
   "mcp__lab__TodoWrite",
   "mcp__lab__TaskCreate",
   "mcp__lab__TaskUpdate",
-  "Bash",
-  "Browser",
-  "Containers",
-  "Logs",
-  "RestartProcess",
-  "InternalUrl",
-  "PublicUrl",
-  "Read",
-  "Write",
-  "Patch",
-  "Edit",
-  "Grep",
-  "Glob",
-  "GitHub",
-  "WebFetch",
-  "TodoWrite",
-  "TaskCreate",
-  "TaskUpdate",
 ] as const;
 
 const CLAUDE_TOOL_DENYLIST = [
@@ -83,6 +65,7 @@ function applySessionPolicy(body: Record<string, unknown>): void {
   const claudeCode = toRecord(meta.claudeCode) ?? {};
   const options = toRecord(claudeCode.options) ?? {};
 
+  // TODO: Remove, `allowedTools` is not a thing.
   options.allowedTools = [...LAB_TOOL_ALLOWLIST];
   options.disallowedTools = [...CLAUDE_TOOL_DENYLIST];
   options.settingSources = ["project"];
@@ -114,6 +97,7 @@ export async function handleAcpPost(
     );
   }
 
+  // TODO: Implement widelogging
   console.log(
     `[acp:${serverId}] POST:`,
     body.method ?? (body.result ? "response" : "notification"),

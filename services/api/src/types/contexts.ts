@@ -3,6 +3,7 @@ import type { AcpClient } from "../acp/client";
 import type { BrowserServiceManager } from "../managers/browser-service.manager";
 import type { PoolManager } from "../managers/pool.manager";
 import type { SessionLifecycleManager } from "../managers/session-lifecycle.manager";
+import type { AcpMonitor } from "../monitors/acp.monitor";
 import type { LogMonitor } from "../monitors/log.monitor";
 import type { SessionStateStore } from "../state/session-state-store";
 import type { Publisher, Sandbox } from "./dependencies";
@@ -27,6 +28,7 @@ export interface InfraContext {
 
 export interface MonitorContext {
   logMonitor: LogMonitor;
+  acpMonitor: AcpMonitor;
 }
 
 export interface GithubContext {

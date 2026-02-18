@@ -4,6 +4,7 @@ import {
   publishInferenceStatus,
   publishSessionCompletion,
 } from "../acp/publisher-adapter";
+import { SessionMessagesProjector } from "../acp/session-messages";
 import {
   extractTodoEvent,
   mapToReplaceTaskRows,
@@ -12,16 +13,21 @@ import {
 import { TIMING } from "../config/constants";
 import { widelog } from "../logging";
 import {
+  getAgentEvents,
   getMaxSequence,
   storeAgentEvent,
 } from "../repositories/agent-event.repository";
-import { findRunningSessions } from "../repositories/session.repository";
+import {
+  findRunningSessions,
+  updateSessionFields,
+} from "../repositories/session.repository";
 import {
   findSessionTasks,
   replaceSessionTasks,
   upsertSessionTasks,
 } from "../repositories/session-task.repository";
 import type { DeferredPublisher } from "../shared/deferred-publisher";
+import { resolveWorkspacePathBySession } from "../shared/path-resolver";
 import {
   INFERENCE_STATUS,
   type SessionStateStore,
@@ -83,6 +89,8 @@ class SessionTracker {
   private activeAssistantPreview = "";
   private nextSequence: number | null = null;
   private persistenceQueue: Promise<void> = Promise.resolve();
+  private readonly messageProjector = new SessionMessagesProjector();
+  private projectionInitialized = false;
 
   private readonly acp: AcpClient;
   private readonly getPublisher: () => Publisher;
@@ -162,14 +170,32 @@ class SessionTracker {
   }
 
   private async persistEnvelope(envelope: unknown): Promise<void> {
+    await this.ensureProjectionInitialized();
+
     if (this.nextSequence === null) {
       this.nextSequence = (await getMaxSequence(this.labSessionId)) + 1;
     }
-
     const sequence = this.nextSequence;
     this.nextSequence += 1;
 
     await storeAgentEvent(this.labSessionId, sequence, envelope);
+    this.messageProjector.applyEnvelope(envelope, sequence);
+
+    const messageSnapshot = this.messageProjector.getSnapshot();
+    this.getPublisher().publishSnapshot(
+      "sessionMessages",
+      { uuid: this.labSessionId },
+      messageSnapshot
+    );
+
+    const lastMessage = this.messageProjector.getLastAssistantPreview();
+    if (lastMessage) {
+      await this.sessionStateStore.setLastMessage(
+        this.labSessionId,
+        lastMessage
+      );
+    }
+
     if (typeof envelope === "object" && envelope !== null) {
       this.getPublisher().publishEvent(
         "sessionAcpEvents",
@@ -202,6 +228,21 @@ class SessionTracker {
     );
   }
 
+  private async ensureProjectionInitialized(): Promise<void> {
+    if (this.projectionInitialized) {
+      return;
+    }
+
+    const events = await getAgentEvents(this.labSessionId);
+    for (const event of events) {
+      this.messageProjector.applyEnvelope(event.eventData, event.sequence);
+    }
+
+    const lastSequence = events.at(-1)?.sequence;
+    this.nextSequence = typeof lastSequence === "number" ? lastSequence + 1 : 0;
+    this.projectionInitialized = true;
+  }
+
   private processEvent(event: AcpEvent): void {
     if (!isKnownEventType(event.type)) {
       return;
@@ -232,9 +273,12 @@ class SessionTracker {
 
   private handleActivity(event: AcpEvent): void {
     this.completionTimerManager.cancelCompletion(this.labSessionId);
-    this.sessionStateStore.setInferenceStatus(
-      this.labSessionId,
-      INFERENCE_STATUS.GENERATING
+    this.persistSessionState(
+      this.sessionStateStore.setInferenceStatus(
+        this.labSessionId,
+        INFERENCE_STATUS.GENERATING
+      ),
+      "set_inference_status_generating"
     );
 
     if (event.type === "turn.started" || event.type === "item.started") {
@@ -248,7 +292,10 @@ class SessionTracker {
         : undefined;
 
     if (lastMessage) {
-      this.sessionStateStore.setLastMessage(this.labSessionId, lastMessage);
+      this.persistSessionState(
+        this.sessionStateStore.setLastMessage(this.labSessionId, lastMessage),
+        "set_last_message"
+      );
     }
 
     publishInferenceStatus(
@@ -266,9 +313,12 @@ class SessionTracker {
 
   private handleTurnEnded(): void {
     this.activeAssistantPreview = "";
-    this.sessionStateStore.setInferenceStatus(
-      this.labSessionId,
-      INFERENCE_STATUS.IDLE
+    this.persistSessionState(
+      this.sessionStateStore.setInferenceStatus(
+        this.labSessionId,
+        INFERENCE_STATUS.IDLE
+      ),
+      "set_inference_status_idle"
     );
     publishInferenceStatus(
       this.getPublisher(),
@@ -279,9 +329,12 @@ class SessionTracker {
   }
 
   private handleError(): void {
-    this.sessionStateStore.setInferenceStatus(
-      this.labSessionId,
-      INFERENCE_STATUS.IDLE
+    this.persistSessionState(
+      this.sessionStateStore.setInferenceStatus(
+        this.labSessionId,
+        INFERENCE_STATUS.IDLE
+      ),
+      "set_inference_status_error_idle"
     );
     publishInferenceStatus(
       this.getPublisher(),
@@ -289,6 +342,22 @@ class SessionTracker {
       INFERENCE_STATUS.IDLE
     );
     this.completionTimerManager.scheduleCompletion(this.labSessionId);
+  }
+
+  private persistSessionState(
+    operation: Promise<void>,
+    operationName: string
+  ): void {
+    operation.catch((error) => {
+      widelog.context(() => {
+        widelog.set("event_name", "acp.session_state_persist_failed");
+        widelog.set("session_id", this.labSessionId);
+        widelog.set("operation", operationName);
+        widelog.set("outcome", "error");
+        widelog.errorFields(error);
+        widelog.flush();
+      });
+    });
   }
 }
 
@@ -397,7 +466,33 @@ export class AcpMonitor {
       }
     }
 
-    for (const { id } of active) {
+    for (const { id, sandboxSessionId, workspaceDirectory } of active) {
+      if (sandboxSessionId && !this.acp.hasSession(id)) {
+        try {
+          const resolvedWorkspaceDirectory =
+            workspaceDirectory ?? (await resolveWorkspacePathBySession(id));
+          const resumedSessionId = await this.acp.createSession(id, {
+            cwd: resolvedWorkspaceDirectory,
+            loadSessionId: sandboxSessionId,
+          });
+
+          if (resumedSessionId !== sandboxSessionId) {
+            await updateSessionFields(id, {
+              sandboxSessionId: resumedSessionId,
+              workspaceDirectory: resolvedWorkspaceDirectory,
+            });
+          }
+        } catch (error) {
+          widelog.context(() => {
+            widelog.set("event_name", "sandbox_agent_monitor.resume_failed");
+            widelog.set("session_id", id);
+            widelog.set("outcome", "error");
+            widelog.errorFields(error);
+            widelog.flush();
+          });
+        }
+      }
+
       this.ensureSessionTracked(id);
     }
   }

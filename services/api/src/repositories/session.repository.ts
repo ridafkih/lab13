@@ -131,11 +131,23 @@ export function findAllSessionSummaries(): Promise<
     .where(and(...visibleSessionConditions));
 }
 
-export function findRunningSessions(): Promise<{ id: string }[]> {
+export function findRunningSessions(): Promise<
+  {
+    id: string;
+    sandboxSessionId: string | null;
+    workspaceDirectory: string | null;
+  }[]
+> {
   return db
-    .select({ id: sessions.id })
+    .select({
+      id: sessions.id,
+      sandboxSessionId: sessions.sandboxSessionId,
+      workspaceDirectory: sessions.workspaceDirectory,
+    })
     .from(sessions)
-    .where(eq(sessions.status, SESSION_STATUS.RUNNING));
+    .where(
+      inArray(sessions.status, [SESSION_STATUS.RUNNING, SESSION_STATUS.POOLED])
+    );
 }
 
 export function findActiveSessionsForReconciliation(): Promise<

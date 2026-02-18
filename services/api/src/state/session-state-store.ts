@@ -16,8 +16,6 @@ interface SessionState {
 }
 
 export class SessionStateStore {
-  constructor() {}
-
   async getInferenceStatus(sessionId: string): Promise<InferenceStatus> {
     const row = await this.getRow(sessionId);
     const value = row?.inferenceStatus;

@@ -40,24 +40,24 @@ const SESSION_BOOTSTRAP_TIMEOUT_MS = 30_000;
 const PROMPT_TIMEOUT_MS = 10 * 60_000;
 const SHUTDOWN_GRACE_MS = 5000;
 const ALLOWED_TOOL_NAMES = new Set([
-  "Bash",
-  "Browser",
-  "Containers",
-  "Logs",
-  "RestartProcess",
-  "InternalUrl",
-  "PublicUrl",
-  "Read",
-  "Write",
-  "Patch",
-  "Edit",
-  "Grep",
-  "Glob",
-  "GitHub",
-  "WebFetch",
-  "TodoWrite",
-  "TaskCreate",
-  "TaskUpdate",
+  "mcp__lab__Bash",
+  "mcp__lab__Browser",
+  "mcp__lab__Containers",
+  "mcp__lab__Logs",
+  "mcp__lab__RestartProcess",
+  "mcp__lab__InternalUrl",
+  "mcp__lab__PublicUrl",
+  "mcp__lab__Read",
+  "mcp__lab__Write",
+  "mcp__lab__Patch",
+  "mcp__lab__Edit",
+  "mcp__lab__Grep",
+  "mcp__lab__Glob",
+  "mcp__lab__GitHub",
+  "mcp__lab__WebFetch",
+  "mcp__lab__TodoWrite",
+  "mcp__lab__TaskCreate",
+  "mcp__lab__TaskUpdate",
 ]);
 
 function isJsonRpcResponse(
@@ -169,18 +169,21 @@ function filterToolsInResult(response: JsonRpcResponse): JsonRpcResponse {
 }
 
 export class AgentProcess {
-  readonly serverId: string;
-  private process: Subprocess | null = null;
-  private processHasExited = false;
   private readonly pendingRequests = new Map<string | number, PendingRequest>();
   private readonly eventBuffer: BufferedEvent[] = [];
   private readonly sseSubscribers = new Set<SseSubscriber>();
   private readonly terminals = new Map<string, ManagedTerminal>();
+
+  readonly serverId: string;
+  private process: Subprocess | null = null;
+  private processHasExited = false;
+  private eventSinkQueue: Promise<void> = Promise.resolve();
   private eventCounter = 0;
   private terminalCounter = 0;
   private stdoutBuffer = "";
   private cachedConfigOptions: unknown = null;
   private workingDir = "/workspaces";
+  private readonly eventSinkUrl = process.env.ACP_EVENT_SINK_URL ?? "";
 
   constructor(serverId: string) {
     this.serverId = serverId;
@@ -603,20 +606,50 @@ export class AgentProcess {
       data: message,
     };
 
-    if (this.sseSubscribers.size > 0) {
-      for (const subscriber of this.sseSubscribers) {
-        try {
-          subscriber(event);
-        } catch {
-          this.sseSubscribers.delete(subscriber);
-        }
-      }
-    } else {
-      this.eventBuffer.push(event);
-      if (this.eventBuffer.length > EVENT_BUFFER_CAP) {
-        this.eventBuffer.shift();
+    this.eventBuffer.push(event);
+    if (this.eventBuffer.length > EVENT_BUFFER_CAP) {
+      this.eventBuffer.shift();
+    }
+
+    this.enqueueEventSinkDelivery(event);
+
+    for (const subscriber of this.sseSubscribers) {
+      try {
+        subscriber(event);
+      } catch {
+        this.sseSubscribers.delete(subscriber);
       }
     }
+  }
+
+  private enqueueEventSinkDelivery(event: BufferedEvent): void {
+    if (!this.eventSinkUrl) {
+      return;
+    }
+
+    this.eventSinkQueue = this.eventSinkQueue
+      .then(async () => {
+        const response = await fetch(this.eventSinkUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: this.serverId,
+            eventId: event.id,
+            envelope: event.data,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(
+            `event sink rejected event ${event.id} with status ${response.status}`
+          );
+        }
+      })
+      .catch((error) => {
+        console.warn(
+          `[agent:${this.serverId}] failed to push event ${event.id} to api sink:`,
+          getErrorMessage(error)
+        );
+      });
   }
 
   sendRequest(message: JsonRpcMessage): Promise<JsonRpcResponse> {
@@ -682,9 +715,7 @@ export class AgentProcess {
   }
 
   subscribe(callback: SseSubscriber): () => void {
-    this.sseSubscribers.clear();
     this.sseSubscribers.add(callback);
-    this.eventBuffer.length = 0;
     return () => {
       this.sseSubscribers.delete(callback);
     };
@@ -744,4 +775,30 @@ export function getOrCreateProcess(serverId: string): AgentProcess {
     agentProcesses.set(serverId, agent);
   }
   return agent;
+}
+
+export async function restartAllAgentProcesses(reason: string): Promise<void> {
+  if (agentProcesses.size === 0) {
+    return;
+  }
+
+  console.log(
+    `[acp-proxy] restarting ${agentProcesses.size} agent process(es): ${reason}`
+  );
+
+  const entries = [...agentProcesses.entries()];
+  await Promise.all(
+    entries.map(async ([serverId, agent]) => {
+      try {
+        await agent.shutdown();
+      } catch (error) {
+        console.warn(
+          `[acp-proxy] failed to shutdown agent ${serverId}:`,
+          getErrorMessage(error)
+        );
+      }
+    })
+  );
+
+  agentProcesses.clear();
 }

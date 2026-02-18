@@ -129,6 +129,7 @@ export class ApiServer {
       acp,
       publisher: this.publisher,
       logMonitor,
+      acpMonitor,
       imageStore,
       proxyBaseUrl,
       sessionStateStore,

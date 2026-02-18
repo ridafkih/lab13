@@ -5,7 +5,6 @@ import {
   type NewSessionRequest,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
-  type SessionNotification,
 } from "acp-http-client";
 import type { AcpEvent } from "../types/dependencies";
 
@@ -19,8 +18,26 @@ interface CreateSessionOptions {
   loadSessionId?: string;
 }
 
-const PROMPT_STARTUP_WAIT_MS = 1500;
+interface ClaudeAuthStatus {
+  flow: {
+    state:
+      | "idle"
+      | "pending"
+      | "starting"
+      | "url_ready"
+      | "awaiting_code"
+      | "connected"
+      | "error";
+    loginUrl: string | null;
+    error: string | null;
+    startedAt: string | null;
+    updatedAt: string | null;
+    processAlive?: boolean;
+  };
+  auth: Record<string, unknown> | null;
+}
 
+const PROMPT_STARTUP_WAIT_MS = 1500;
 const LAB_TOOL_ALLOWLIST = [
   "mcp__lab__Bash",
   "mcp__lab__Browser",
@@ -40,24 +57,6 @@ const LAB_TOOL_ALLOWLIST = [
   "mcp__lab__TodoWrite",
   "mcp__lab__TaskCreate",
   "mcp__lab__TaskUpdate",
-  "Bash",
-  "Browser",
-  "Containers",
-  "Logs",
-  "RestartProcess",
-  "InternalUrl",
-  "PublicUrl",
-  "Read",
-  "Write",
-  "Patch",
-  "Edit",
-  "Grep",
-  "Glob",
-  "GitHub",
-  "WebFetch",
-  "TodoWrite",
-  "TaskCreate",
-  "TaskUpdate",
 ] as const;
 
 const CLAUDE_TOOL_DENYLIST = [
@@ -158,7 +157,14 @@ export class AgentSessionManager {
   private readonly sessionIds = new Map<string, string>();
   private readonly sessionOptions = new Map<string, CreateSessionOptions>();
   private readonly inFlightPrompts = new Map<string, Promise<void>>();
+  private readonly inFlightSessionInitializations = new Map<
+    string,
+    Promise<string>
+  >();
   private readonly fatalResetsInFlight = new Set<string>();
+  private readonly eventStreamControllers = new Map<string, AbortController>();
+  private readonly eventStreamRunners = new Map<string, Promise<void>>();
+  private readonly lastEventIds = new Map<string, number>();
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
@@ -172,21 +178,65 @@ export class AgentSessionManager {
     serverId: string,
     options: CreateSessionOptions
   ): Promise<string> {
+    const requestedLoadSessionId = options.loadSessionId;
+    const existingSessionId = this.sessionIds.get(serverId);
+    if (existingSessionId) {
+      if (
+        requestedLoadSessionId &&
+        requestedLoadSessionId !== existingSessionId
+      ) {
+        const existingClient = this.clients.get(serverId);
+        this.stopEventStream(serverId);
+        this.inFlightPrompts.delete(serverId);
+        this.sessionIds.delete(serverId);
+        this.clients.delete(serverId);
+        if (existingClient) {
+          await existingClient.disconnect().catch(() => undefined);
+        }
+      } else {
+        this.sessionOptions.set(serverId, {
+          ...options,
+          loadSessionId: existingSessionId,
+        });
+        return existingSessionId;
+      }
+    }
+
+    const refreshedExistingSessionId = this.sessionIds.get(serverId);
+    if (refreshedExistingSessionId) {
+      this.sessionOptions.set(serverId, {
+        ...options,
+        loadSessionId: refreshedExistingSessionId,
+      });
+      return refreshedExistingSessionId;
+    }
+
+    const existingInitialization =
+      this.inFlightSessionInitializations.get(serverId);
+    if (existingInitialization) {
+      return existingInitialization;
+    }
+
+    const initializationPromise = this.createSessionInternal(
+      serverId,
+      options
+    ).finally(() => {
+      this.inFlightSessionInitializations.delete(serverId);
+    });
+
+    this.inFlightSessionInitializations.set(serverId, initializationPromise);
+    return initializationPromise;
+  }
+
+  private async createSessionInternal(
+    serverId: string,
+    options: CreateSessionOptions
+  ): Promise<string> {
     const listeners = this.listeners.get(serverId) ?? new Set<EventListener>();
     this.listeners.set(serverId, listeners);
 
     const buffer = this.eventBuffers.get(serverId) ?? [];
     this.eventBuffers.set(serverId, buffer);
-
-    const emit = (envelope: AnyMessage) => {
-      if (listeners.size === 0) {
-        buffer.push(envelope);
-      } else {
-        for (const listener of listeners) {
-          listener(envelope);
-        }
-      }
-    };
 
     const clientOptions: AcpHttpClientOptions = {
       baseUrl: this.baseUrl,
@@ -208,15 +258,7 @@ export class AgentSessionManager {
       client: {
         requestPermission: (request) =>
           Promise.resolve(autoApprovePermission(request)),
-        sessionUpdate: (notification: SessionNotification) => {
-          const envelope: AnyMessage = {
-            jsonrpc: "2.0",
-            method: "session/update",
-            params: notification,
-          };
-          emit(envelope);
-          return Promise.resolve();
-        },
+        sessionUpdate: () => Promise.resolve(),
       },
     };
 
@@ -272,7 +314,7 @@ export class AgentSessionManager {
     return newSessionResult.sessionId;
   }
 
-  sendMessage(serverId: string, text: string): Promise<void> {
+  async sendMessage(serverId: string, text: string): Promise<void> {
     const client = this.clients.get(serverId);
     if (!client) {
       throw new Error(`No session for server: ${serverId}`);
@@ -281,6 +323,11 @@ export class AgentSessionManager {
     const sessionId = this.sessionIds.get(serverId);
     if (!sessionId) {
       throw new Error(`No session ID for server: ${serverId}`);
+    }
+
+    const priorPrompt = this.inFlightPrompts.get(serverId);
+    if (priorPrompt) {
+      await priorPrompt.catch(() => undefined);
     }
 
     // Always emit a user_message event so it flows through SSE, gets
@@ -304,7 +351,20 @@ export class AgentSessionManager {
         sessionId,
         prompt: [{ type: "text", text }],
       })
-      .then(() => {
+      .then((response) => {
+        const assistantText = extractPromptResponseText(response);
+        if (assistantText) {
+          this.emitSessionEvent(serverId, {
+            jsonrpc: "2.0",
+            method: "session/update",
+            params: {
+              update: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: assistantText },
+              },
+            },
+          });
+        }
         this.emitSessionEvent(serverId, {
           jsonrpc: "2.0",
           id: null,
@@ -396,6 +456,7 @@ export class AgentSessionManager {
         await client.disconnect().catch(() => undefined);
       }
 
+      this.stopEventStream(serverId);
       this.clients.delete(serverId);
       this.sessionIds.delete(serverId);
       this.inFlightPrompts.delete(serverId);
@@ -446,6 +507,8 @@ export class AgentSessionManager {
   async destroySession(serverId: string): Promise<void> {
     const client = this.clients.get(serverId);
     this.inFlightPrompts.delete(serverId);
+    this.stopEventStream(serverId);
+    this.lastEventIds.delete(serverId);
     if (client) {
       await client.disconnect();
       this.clients.delete(serverId);
@@ -493,6 +556,15 @@ export class AgentSessionManager {
     }
   }
 
+  private stopEventStream(serverId: string): void {
+    const controller = this.eventStreamControllers.get(serverId);
+    if (controller) {
+      controller.abort();
+      this.eventStreamControllers.delete(serverId);
+    }
+    this.eventStreamRunners.delete(serverId);
+  }
+
   async listAgents(): Promise<{ agents: Record<string, unknown>[] }> {
     const response = await fetch(`${this.baseUrl}/v1/agents`);
     return response.json();
@@ -527,6 +599,68 @@ export class AgentSessionManager {
     const response = await fetch(url);
     return new Uint8Array(await response.arrayBuffer());
   }
+
+  async startClaudeAuth(): Promise<ClaudeAuthStatus> {
+    const response = await fetch(`${this.baseUrl}/v1/claude/auth/start`, {
+      method: "POST",
+    });
+    if (!response.ok) {
+      throw new Error("Failed to start Claude auth flow");
+    }
+    return response.json();
+  }
+
+  async getClaudeAuthStatus(): Promise<ClaudeAuthStatus> {
+    const response = await fetch(`${this.baseUrl}/v1/claude/auth/status`);
+    if (!response.ok) {
+      throw new Error("Failed to fetch Claude auth status");
+    }
+    return response.json();
+  }
+
+  async streamClaudeAuthEvents(
+    signal?: AbortSignal,
+    lastEventId?: number
+  ): Promise<Response> {
+    const headers = new Headers();
+    if (typeof lastEventId === "number" && Number.isFinite(lastEventId)) {
+      headers.set("Last-Event-ID", String(lastEventId));
+    }
+
+    const response = await fetch(`${this.baseUrl}/v1/claude/auth/events`, {
+      method: "GET",
+      headers,
+      signal,
+    });
+
+    if (!(response.ok && response.body)) {
+      throw new Error("Failed to stream Claude auth events");
+    }
+
+    return response;
+  }
+
+  async logoutClaudeAuth(): Promise<ClaudeAuthStatus> {
+    const response = await fetch(`${this.baseUrl}/v1/claude/auth/logout`, {
+      method: "POST",
+    });
+    if (!response.ok) {
+      throw new Error("Failed to logout Claude auth");
+    }
+    return response.json();
+  }
+
+  async submitClaudeAuthCode(code: string): Promise<ClaudeAuthStatus> {
+    const response = await fetch(`${this.baseUrl}/v1/claude/auth/code`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to submit Claude auth code");
+    }
+    return response.json();
+  }
 }
 
 export type AcpClient = AgentSessionManager;
@@ -541,6 +675,55 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function toRecord(value: unknown): Record<string, unknown> | null {
   return isRecord(value) ? { ...value } : null;
+}
+
+function extractPromptResponseText(response: unknown): string {
+  if (!isRecord(response)) {
+    return "";
+  }
+
+  const directText = response.text;
+  if (typeof directText === "string" && directText.trim()) {
+    return directText;
+  }
+
+  const content = response.content;
+  if (Array.isArray(content)) {
+    const parts = content
+      .map((item) =>
+        isRecord(item) && typeof item.text === "string" ? item.text : ""
+      )
+      .filter(Boolean);
+    if (parts.length > 0) {
+      return parts.join("");
+    }
+  }
+
+  if (
+    isRecord(content) &&
+    typeof content.text === "string" &&
+    content.text.trim()
+  ) {
+    return content.text;
+  }
+
+  const message = response.message;
+  if (isRecord(message)) {
+    const messageText = extractPromptResponseText(message);
+    if (messageText) {
+      return messageText;
+    }
+  }
+
+  const result = response.result;
+  if (isRecord(result)) {
+    const resultText = extractPromptResponseText(result);
+    if (resultText) {
+      return resultText;
+    }
+  }
+
+  return "";
 }
 
 function hasMessageMethod(envelope: AnyMessage): envelope is AnyMessage & {
